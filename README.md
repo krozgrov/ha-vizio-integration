@@ -1,8 +1,9 @@
-# VIZIO SmartCast Plus
 
 [![GitHub release](https://img.shields.io/github/release/krozgrov/ha-vizio-integration.svg)](https://github.com/krozgrov/ha-vizio-integration/releases)
 [![GitHub stars](https://img.shields.io/github/stars/krozgrov/ha-vizio-integration.svg)](https://github.com/krozgrov/ha-vizio-integration/stargazers)
 ![GitHub License](https://img.shields.io/github/license/krozgrov/ha-vizio-integration)
+
+# VIZIO SmartCast Plus
 
 📺 Home Assistant VIZIO SmartCast integration with enhanced features and improvements.
 
