@@ -6,6 +6,7 @@
   "documentation": "https://www.home-assistant.io/integrations/vizio",
   "integration_type": "device",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/krozgrov/ha-vizio-integration/issues",
   "loggers": ["pyvizio"],
   "quality_scale": "platinum",
   "requirements": ["pyvizio==0.1.61"],
