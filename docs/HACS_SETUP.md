@@ -3,21 +3,25 @@
 ## ✅ Fixed Issues
 
 ### 1. HACS JSON Validation
+
 - **Fixed**: Removed invalid keys from `hacs.json`
   - Removed `domains` (not allowed in hacs.json)
   - Removed `iot_class` (not allowed in hacs.json)
 - **Status**: ✅ Committed and pushed to main branch
 
 ### 2. Repository Structure
+
 - **Fixed**: Proper structure with `custom_components/vizio_smartcast/`
 - **Status**: ✅ Compliant
 
 ## ⚠️ Remaining Issues (Require GitHub UI Actions)
 
 ### 1. Repository Description
+
 **Error**: The repository has no description
 
 **Fix**:
+
 1. Go to https://github.com/krozgrov/ha-vizio-integration
 2. Click the ⚙️ Settings gear icon (or go to Settings)
 3. Scroll down to "About" section
@@ -25,9 +29,11 @@
 5. Click "Save changes"
 
 ### 2. Repository Topics
+
 **Error**: The repository has no valid topics
 
 **Fix**:
+
 1. Go to https://github.com/krozgrov/ha-vizio-integration
 2. Click the ⚙️ Settings gear icon (or go to Settings)
 3. Scroll down to "Topics" section
@@ -43,9 +49,11 @@
 5. Click "Save changes"
 
 ### 3. Brands Repository
+
 **Error**: The repository has not been added as a custom domain to the brands repo
 
 **Fix**:
+
 1. Go to https://github.com/home-assistant/brands
 2. Fork the repository
 3. Add your integration to the appropriate file:
@@ -92,4 +100,3 @@
 - The `domains` and `iot_class` keys are read from `manifest.json`, not `hacs.json`
 - HACS automatically detects the domain from the integration folder name
 - The brands repository addition is optional but helps with HACS validation
-

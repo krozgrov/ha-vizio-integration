@@ -16,4 +16,3 @@ jobs:
         run: npm install --global prettier
       - name: Run Prettier
         run: prettier --check .
-

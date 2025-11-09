@@ -198,6 +198,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 If you encounter any issues, please report them on the [GitHub Issues](https://github.com/krozgrov/ha-vizio-integration/issues) page.
 
 When reporting issues, please include:
+
 - Home Assistant version
 - Integration version
 - Device model and firmware version
@@ -219,4 +220,3 @@ If you find this integration useful, please consider giving it a star ⭐ on Git
 ---
 
 **Note**: This is a custom integration and is not affiliated with VIZIO, Inc. VIZIO and SmartCast are trademarks of VIZIO, Inc.
-
