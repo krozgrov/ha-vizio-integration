@@ -3,7 +3,7 @@
   "name": "VIZIO SmartCast Plus",
   "codeowners": ["@krozgrov"],
   "config_flow": true,
-  "documentation": "https://www.home-assistant.io/integrations/vizio",
+  "documentation": "https://github.com/krozgrov/ha-vizio-integration",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/krozgrov/ha-vizio-integration/issues",
