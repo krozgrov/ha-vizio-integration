@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from datetime import timedelta
-
 import logging
-import asyncio
 
 from pyvizio import AppConfig, VizioAsync
 from pyvizio.api.apps import find_app_name
@@ -35,7 +32,7 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     CONF_ADDITIONAL_CONFIGS,
@@ -66,7 +63,7 @@ PARALLEL_UPDATES = 0
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up a Vizio media player entry."""
     host = config_entry.data[CONF_HOST]
@@ -130,7 +127,6 @@ async def async_setup_entry(
         SERVICE_UPDATE_SETTING, UPDATE_SETTING_SCHEMA, "async_update_setting"
     )
 
-last_change_time = None  # To help with rate limiting
 
 class VizioDevice(MediaPlayerEntity):
     """Media Player implementation which performs REST requests to device."""
@@ -150,6 +146,7 @@ class VizioDevice(MediaPlayerEntity):
         """Initialize Vizio device."""
         self._config_entry = config_entry
         self._apps_coordinator = apps_coordinator
+
         self._volume_step = config_entry.options[CONF_VOLUME_STEP]
         self._current_input: str | None = None
         self._current_app_config: AppConfig | None = None
@@ -243,19 +240,12 @@ class VizioDevice(MediaPlayerEntity):
                 )
             else:
                 self._attr_volume_level = None
-
             if VIZIO_MUTE in audio_settings:
-                mute_value = audio_settings[VIZIO_MUTE]
-
-            if isinstance(mute_value, str):
-                self._attr_is_volume_muted = mute_value.lower() == VIZIO_MUTE_ON
-            elif isinstance(mute_value, int):
-        # Assuming 1 represents muted and 0 represents unmuted
-                self._attr_is_volume_muted = mute_value == 1
+                self._attr_is_volume_muted = (
+                    audio_settings[VIZIO_MUTE].lower() == VIZIO_MUTE_ON
+                )
             else:
                 self._attr_is_volume_muted = None
-        else:
-            self._attr_is_volume_muted = None
 
             if VIZIO_SOUND_MODE in audio_settings:
                 self._attr_supported_features |= (
@@ -451,39 +441,39 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         """Select input source."""
-        _LOGGER.debug("Selecting source: %s", source)
-        # Fail early if the source is invalid or unavailable
-        if not self._available_inputs or source not in self._available_inputs:
-            _LOGGER.warning("Invalid or unavailable source selected: %s", source)
-            return
-        try:
-            # Fetch the latest input list from the device
-            fetched_inputs = await self._device.get_inputs_list(log_api_exception=False)
-            if not fetched_inputs:
-                _LOGGER.error("No inputs fetched from the device.")
-                return
-            _LOGGER.debug("Fetched %d inputs from the device.", len(fetched_inputs))
-            # Find the matching input item by source name
-            curr_input_item = next((input_ for input_ in fetched_inputs if input_.name == source), None)
-            if not curr_input_item:
-                _LOGGER.error("No matching input found for source: %s", source)
-                return
-            # Use id if available, otherwise fall back to name
-            input_identifier = curr_input_item.id or curr_input_item.name
-            if not input_identifier:
-                _LOGGER.error("No valid id or name for input item: %s", curr_input_item)
-                _LOGGER.debug("Invalid input item details: %s", curr_input_item)
-                return
-            # Set the input and confirm success
-            _LOGGER.info("Setting input using: %s", input_identifier)
-            await self._device.set_input(input_identifier, log_api_exception=False)
-            _LOGGER.info("Successfully set input to: %s", input_identifier)
-        except TypeError as e:
-            _LOGGER.error("TypeError encountered while selecting input: %s", str(e))
-        except ValueError as e:
-            _LOGGER.error("ValueError encountered while selecting input: %s", str(e))
-        except Exception as e:
-            _LOGGER.error("Unexpected error selecting input: %s", str(e))
+        if source in self._available_inputs:
+            await self._device.set_input(source, log_api_exception=False)
+        elif source in self._get_additional_app_names():
+            await self._device.launch_app_config(
+                **next(
+                    app["config"]
+                    for app in self._additional_app_configs
+                    if app["name"] == source
+                ),
+                log_api_exception=False,
+            )
+        elif source in self._available_apps:
+            await self._device.launch_app(
+                source, self._all_apps, log_api_exception=False
+            )
+
+    async def async_volume_up(self) -> None:
+        """Increase volume of the device."""
+        await self._device.vol_up(num=self._volume_step, log_api_exception=False)
+
+        if self._attr_volume_level is not None:
+            self._attr_volume_level = min(
+                1.0, self._attr_volume_level + self._volume_step / self._max_volume
+            )
+
+    async def async_volume_down(self) -> None:
+        """Decrease volume of the device."""
+        await self._device.vol_down(num=self._volume_step, log_api_exception=False)
+
+        if self._attr_volume_level is not None:
+            self._attr_volume_level = max(
+                0.0, self._attr_volume_level - self._volume_step / self._max_volume
+            )
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level."""

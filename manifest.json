@@ -1,7 +1,7 @@
 {
   "domain": "vizio_smartcast",
-  "name": "VIZIO SmartCast",
-  "codeowners": ["@raman325", "@krozgrov"],
+  "name": "VIZIO SmartCast Plus",
+  "codeowners": ["@krozgrov"],
   "config_flow": true,
   "documentation": "https://www.home-assistant.io/integrations/vizio",
   "integration_type": "device",
@@ -10,5 +10,5 @@
   "quality_scale": "platinum",
   "requirements": ["pyvizio==0.1.61"],
   "zeroconf": ["_viziocast._tcp.local."],
-  "version": "2025.5.1"
+  "version": "2025.11.9b1"
 }
