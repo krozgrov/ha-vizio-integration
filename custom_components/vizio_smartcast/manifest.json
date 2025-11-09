@@ -11,5 +11,5 @@
   "quality_scale": "platinum",
   "requirements": ["pyvizio==0.1.61"],
   "zeroconf": ["_viziocast._tcp.local."],
-  "version": "2025.11.9b1"
+  "version": "2025.11.9b2"
 }
