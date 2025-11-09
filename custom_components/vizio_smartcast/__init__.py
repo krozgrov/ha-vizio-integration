@@ -16,8 +16,19 @@ from .coordinator import VizioAppsDataUpdateCoordinator
 PLATFORMS = [Platform.MEDIA_PLAYER]
 
 
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old config entries to new format if needed."""
+    if config_entry.version == 1:
+        # Future migration logic can be added here
+        # For now, just return True to indicate migration is complete
+        return True
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Load the saved entities."""
+    # Migrate config entry if needed
+    await async_migrate_entry(hass, entry)
 
     hass.data.setdefault(DOMAIN, {})
     if (

@@ -49,16 +49,21 @@ class VizioAppsDataUpdateCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]
 
     async def _async_update_data(self) -> list[dict[str, Any]]:
         """Update data via library."""
-        if data := await gen_apps_list_from_url(
-            session=async_get_clientsession(self.hass)
-        ):
-            # Reset the fail count and threshold when the data is successfully retrieved
-            self.fail_count = 0
-            self.fail_threshold = 10
-            # Store the new data if it has changed so we have it for the next restart
-            if data != self.data:
-                await self.store.async_save(data)
-            return data
+        try:
+            if data := await gen_apps_list_from_url(
+                session=async_get_clientsession(self.hass)
+            ):
+                # Reset the fail count and threshold when the data is successfully retrieved
+                self.fail_count = 0
+                self.fail_threshold = 10
+                # Store the new data if it has changed so we have it for the next restart
+                if data != self.data:
+                    await self.store.async_save(data)
+                return data
+        except Exception as err:
+            _LOGGER.debug(
+                "Error retrieving apps list from external server: %s", err
+            )
         # For every failure, increase the fail count until we reach the threshold.
         # We then log a warning, increase the threshold, and reset the fail count.
         # This is here to prevent silent failures but to reduce repeat logs.

@@ -100,3 +100,13 @@ htmlcov/
 
 .pytype/
 
+
+
+# Documentation (generated/temporary markdown files)
+
+docs/*.tmp.md
+
+docs/*.generated.md
+
+*.md.bak
+

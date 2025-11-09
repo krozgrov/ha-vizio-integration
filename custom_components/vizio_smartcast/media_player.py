@@ -158,7 +158,13 @@ class VizioDevice(MediaPlayerEntity):
             CONF_ADDITIONAL_CONFIGS, []
         )
         self._device = device
-        self._max_volume = float(device.get_max_volume())
+        try:
+            self._max_volume = float(device.get_max_volume())
+        except (ValueError, TypeError, AttributeError) as err:
+            _LOGGER.warning(
+                "Failed to get max volume for %s, using default of 100: %s", name, err
+            )
+            self._max_volume = 100.0
         self._attr_assumed_state = True
 
         # Entity class attributes that will change with each update (we only include
@@ -189,9 +195,22 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_update(self) -> None:
         """Retrieve latest state of the device."""
-        if (
-            is_on := await self._device.get_power_state(log_api_exception=False)
-        ) is None:
+        try:
+            is_on = await self._device.get_power_state(log_api_exception=False)
+        except Exception as err:
+            _LOGGER.debug(
+                "Error getting power state for %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
+            )
+            if self._attr_available:
+                _LOGGER.warning(
+                    "Lost connection to %s", self._config_entry.data[CONF_HOST]
+                )
+                self._attr_available = False
+            return
+
+        if is_on is None:
             if self._attr_available:
                 _LOGGER.warning(
                     "Lost connection to %s", self._config_entry.data[CONF_HOST]
@@ -207,17 +226,31 @@ class VizioDevice(MediaPlayerEntity):
 
         if not self._received_device_info:
             device_reg = dr.async_get(self.hass)
-            assert self._config_entry.unique_id
-            device = device_reg.async_get_device(
-                identifiers={(DOMAIN, self._config_entry.unique_id)}
-            )
-            if device:
-                device_reg.async_update_device(
-                    device.id,
-                    model=await self._device.get_model_name(log_api_exception=False),
-                    sw_version=await self._device.get_version(log_api_exception=False),
+            if not self._config_entry.unique_id:
+                _LOGGER.warning(
+                    "Config entry %s has no unique_id, skipping device info update",
+                    self._config_entry.entry_id,
                 )
-                self._received_device_info = True
+            else:
+                device = device_reg.async_get_device(
+                    identifiers={(DOMAIN, self._config_entry.unique_id)}
+                )
+                if device:
+                    try:
+                        model = await self._device.get_model_name(log_api_exception=False)
+                        version = await self._device.get_version(log_api_exception=False)
+                        device_reg.async_update_device(
+                            device.id,
+                            model=model,
+                            sw_version=version,
+                        )
+                        self._received_device_info = True
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Error updating device info for %s: %s",
+                            self._config_entry.data[CONF_HOST],
+                            err,
+                        )
 
         if not is_on:
             self._attr_state = MediaPlayerState.OFF
@@ -393,7 +426,7 @@ class VizioDevice(MediaPlayerEntity):
         return self._available_inputs
 
     @property
-    def app_id(self):
+    def app_id(self) -> dict[str, str] | None:
         """Return the ID of the current app if it is unknown by pyvizio."""
         if self._current_app_config and self.source == UNKNOWN_APP:
             return {
@@ -441,20 +474,33 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         """Select input source."""
-        if source in self._available_inputs:
-            await self._device.set_input(source, log_api_exception=False)
-        elif source in self._get_additional_app_names():
-            await self._device.launch_app_config(
-                **next(
-                    app["config"]
-                    for app in self._additional_app_configs
-                    if app["name"] == source
-                ),
-                log_api_exception=False,
-            )
-        elif source in self._available_apps:
-            await self._device.launch_app(
-                source, self._all_apps, log_api_exception=False
+        try:
+            if source in self._available_inputs:
+                await self._device.set_input(source, log_api_exception=False)
+            elif source in self._get_additional_app_names():
+                app_config = next(
+                    (app["config"] for app in self._additional_app_configs if app["name"] == source),
+                    None,
+                )
+                if app_config:
+                    await self._device.launch_app_config(
+                        **app_config,
+                        log_api_exception=False,
+                    )
+                else:
+                    _LOGGER.warning("App config not found for source: %s", source)
+            elif source in self._available_apps:
+                await self._device.launch_app(
+                    source, self._all_apps, log_api_exception=False
+                )
+            else:
+                _LOGGER.warning("Source not found: %s", source)
+        except Exception as err:
+            _LOGGER.error(
+                "Error selecting source %s on %s: %s",
+                source,
+                self._config_entry.data[CONF_HOST],
+                err,
             )
 
     async def async_volume_up(self) -> None:

@@ -96,11 +96,25 @@ def _get_pairing_schema(input_dict: dict[str, Any] | None = None) -> vol.Schema:
 
 def _host_is_same(host1: str, host2: str) -> bool:
     """Check if host1 and host2 are the same."""
-    host1 = host1.split(":")[0]
-    host1 = host1 if is_ip_address(host1) else socket.gethostbyname(host1)
-    host2 = host2.split(":")[0]
-    host2 = host2 if is_ip_address(host2) else socket.gethostbyname(host2)
-    return host1 == host2
+    try:
+        host1 = host1.split(":")[0]
+        if not is_ip_address(host1):
+            try:
+                host1 = socket.gethostbyname(host1)
+            except (socket.gaierror, OSError):
+                # If DNS resolution fails, compare hostnames directly
+                pass
+        host2 = host2.split(":")[0]
+        if not is_ip_address(host2):
+            try:
+                host2 = socket.gethostbyname(host2)
+            except (socket.gaierror, OSError):
+                # If DNS resolution fails, compare hostnames directly
+                pass
+        return host1 == host2
+    except Exception:
+        # Fallback to direct string comparison if anything fails
+        return host1.split(":")[0].lower() == host2.split(":")[0].lower()
 
 
 class VizioOptionsConfigFlow(OptionsFlow):
