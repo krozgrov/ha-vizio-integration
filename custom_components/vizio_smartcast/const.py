@@ -42,7 +42,7 @@ DEFAULT_VOLUME_STEP = 1
 
 DEVICE_ID = "pyvizio"
 
-DOMAIN = "vizio"
+DOMAIN = "vizio_smartcast"
 
 COMMON_SUPPORTED_COMMANDS = (
     MediaPlayerEntityFeature.PAUSE

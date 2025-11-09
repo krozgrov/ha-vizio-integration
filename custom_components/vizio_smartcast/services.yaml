@@ -1,7 +1,7 @@
 update_setting:
   target:
     entity:
-      integration: vizio
+      integration: vizio_smartcast
       domain: media_player
   fields:
     setting_type:
