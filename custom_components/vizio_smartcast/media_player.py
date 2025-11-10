@@ -474,11 +474,13 @@ class VizioDevice(MediaPlayerEntity):
     async def async_turn_on(self) -> None:
         """Turn the device on."""
         host = self._config_entry.data[CONF_HOST]
-        max_attempts = 2
+        max_attempts = 3
         initial_delay = 5.0  # Wait 5s after first command - allows time for TV to wake
-        retry_delay = 3.0  # Wait 3s between retry attempts
+        retry_delay = 4.0  # Wait 4s between retry attempts
         
         _LOGGER.info("Attempting to turn on %s", host)
+        
+        total_wait_time = 0.0
         
         for attempt in range(max_attempts):
             try:
@@ -501,6 +503,7 @@ class VizioDevice(MediaPlayerEntity):
                 # Wait before checking - don't poll frequently as it can overwhelm the TV
                 delay = initial_delay if attempt == 0 else retry_delay
                 await asyncio.sleep(delay)
+                total_wait_time += delay
                 
                 # Check state once after waiting - use direct API client
                 try:
@@ -513,22 +516,22 @@ class VizioDevice(MediaPlayerEntity):
                         self._attr_state = MediaPlayerState.ON
                         self._attr_available = True
                         _LOGGER.info(
-                            "Successfully turned on %s (attempt %d/%d, checked after %.1fs)",
+                            "Successfully turned on %s (attempt %d/%d, checked after %.1fs total)",
                             host,
                             attempt + 1,
                             max_attempts,
-                            delay,
+                            total_wait_time,
                         )
                         # Force an update to get the actual state from the device
                         await self.async_update()
                         return
                     else:
                         _LOGGER.debug(
-                            "Power on verification failed for %s (attempt %d/%d), device still off after %.1fs",
+                            "Power on verification failed for %s (attempt %d/%d), device still off after %.1fs total",
                             host,
                             attempt + 1,
                             max_attempts,
-                            delay,
+                            total_wait_time,
                         )
                         if attempt < max_attempts - 1:
                             # Continue to next attempt
@@ -536,10 +539,10 @@ class VizioDevice(MediaPlayerEntity):
                         else:
                             # Last attempt failed
                             _LOGGER.warning(
-                                "Power on command sent to %s %d times but device did not turn on within %.1fs",
+                                "Power on command sent to %s %d times but device did not turn on within %.1fs total",
                                 host,
                                 max_attempts,
-                                delay,
+                                total_wait_time,
                             )
                             # Update state optimistically anyway
                             self._attr_state = MediaPlayerState.ON
