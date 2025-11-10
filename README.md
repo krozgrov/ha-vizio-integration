@@ -212,7 +212,7 @@ This integration is based on the built-in Home Assistant Vizio integration, whic
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Support
 
