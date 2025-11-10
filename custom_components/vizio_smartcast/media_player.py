@@ -463,10 +463,9 @@ class VizioDevice(MediaPlayerEntity):
     async def async_turn_on(self) -> None:
         """Turn the device on."""
         host = self._config_entry.data[CONF_HOST]
-        max_attempts = 3
-        initial_delay = 6.0  # Wait 6s after first command - some TVs take longer to wake
-        retry_delay = 3.0  # Wait 3s between retry attempts
-        check_interval = 1.0  # Check state every 1s during wait
+        max_attempts = 2
+        initial_delay = 8.0  # Wait 8s after first command - some TVs take longer to wake
+        retry_delay = 5.0  # Wait 5s between retry attempts
         
         _LOGGER.info("Attempting to turn on %s", host)
         
@@ -482,36 +481,11 @@ class VizioDevice(MediaPlayerEntity):
                 # Send power on command
                 await self._device.pow_on(log_api_exception=False)
                 
-                # Wait and check state periodically
-                # For first attempt, wait longer and check more frequently
+                # Wait before checking - don't poll frequently as it can overwhelm the TV
                 delay = initial_delay if attempt == 0 else retry_delay
-                checks = int(delay / check_interval)
+                await asyncio.sleep(delay)
                 
-                for check_num in range(checks):
-                    await asyncio.sleep(check_interval)
-                    try:
-                        power_state = await self._device.get_power_state(log_api_exception=False)
-                        if power_state:
-                            # Device is confirmed on
-                            self._attr_state = MediaPlayerState.ON
-                            self._attr_available = True
-                            _LOGGER.info(
-                                "Successfully turned on %s (attempt %d/%d, checked after %.1fs)",
-                                host,
-                                attempt + 1,
-                                max_attempts,
-                                (check_num + 1) * check_interval,
-                            )
-                            # Force an update to get the actual state from the device
-                            await self.async_update()
-                            return
-                    except Exception as e:
-                        _LOGGER.debug(
-                            "Error checking power state during wait: %s", e
-                        )
-                        # Continue waiting
-                
-                # Final check after full delay
+                # Check state once after waiting
                 try:
                     power_state = await self._device.get_power_state(log_api_exception=False)
                     if power_state:
