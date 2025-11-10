@@ -824,17 +824,86 @@ class VizioDevice(MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level."""
         try:
-            # Always use set_setting to set volume directly (faster and more accurate)
+            # Try to use set_setting to set volume directly (faster and more accurate)
             volume_value = int(volume * self._max_volume)
-            await self._device.set_setting(
-                VIZIO_AUDIO_SETTINGS,
-                VIZIO_VOLUME,
-                volume_value,
-                log_api_exception=False,
-            )
-            self._attr_volume_level = volume
-            # Force an update to get the actual volume from the device
-            await self.async_update()
+            try:
+                await self._device.set_setting(
+                    VIZIO_AUDIO_SETTINGS,
+                    VIZIO_VOLUME,
+                    volume_value,
+                    log_api_exception=False,
+                )
+                self._attr_volume_level = volume
+                # Force an update to get the actual volume from the device
+                await self.async_update()
+            except Exception as set_err:
+                # Fallback: Some TV models (e.g., VFD40M-0809) don't support direct volume setting
+                # Use volume up/down commands to reach the desired level
+                error_msg = str(set_err).lower()
+                if "couldn't detect setting" in error_msg or "volume" in error_msg:
+                    _LOGGER.debug(
+                        "Direct volume setting not supported on %s, using step method: %s",
+                        self._config_entry.data[CONF_HOST],
+                        set_err,
+                    )
+                    
+                    # Get current volume if available
+                    current_volume = self._attr_volume_level
+                    if current_volume is None:
+                        # Try to get current volume from device
+                        try:
+                            await self.async_update()
+                            current_volume = self._attr_volume_level
+                        except Exception:
+                            pass
+                    
+                    if current_volume is not None:
+                        # Calculate steps needed
+                        target_volume_value = int(volume * self._max_volume)
+                        current_volume_value = int(current_volume * self._max_volume)
+                        steps_needed = target_volume_value - current_volume_value
+                        
+                        if abs(steps_needed) > 0:
+                            # Use step size of 5 for efficiency, but limit to reasonable range
+                            step_size = min(5, max(abs(steps_needed) // 5, 1))
+                            num_steps = abs(steps_needed) // step_size
+                            
+                            # Send volume commands
+                            for step in range(num_steps):
+                                if step > 0:
+                                    await asyncio.sleep(0.15)  # Small delay between steps
+                                if steps_needed > 0:
+                                    await self._device.vol_up(num=step_size, log_api_exception=False)
+                                else:
+                                    await self._device.vol_down(num=step_size, log_api_exception=False)
+                            
+                            # Handle remainder with single steps
+                            remainder = abs(steps_needed) % step_size
+                            if remainder > 0:
+                                await asyncio.sleep(0.15)
+                                for _ in range(remainder):
+                                    await asyncio.sleep(0.1)
+                                    if steps_needed > 0:
+                                        await self._device.vol_up(num=1, log_api_exception=False)
+                                    else:
+                                        await self._device.vol_down(num=1, log_api_exception=False)
+                            
+                            # Update state after stepping
+                            self._attr_volume_level = volume
+                            await self.async_update()
+                        else:
+                            # Already at target volume
+                            self._attr_volume_level = volume
+                    else:
+                        # Can't determine current volume, just set the target optimistically
+                        _LOGGER.warning(
+                            "Could not determine current volume on %s, setting optimistically",
+                            self._config_entry.data[CONF_HOST],
+                        )
+                        self._attr_volume_level = volume
+                else:
+                    # Re-raise if it's a different error
+                    raise
         except Exception as err:
             _LOGGER.error(
                 "Error setting volume level on %s: %s",
