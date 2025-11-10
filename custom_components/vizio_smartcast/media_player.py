@@ -210,7 +210,13 @@ class VizioDevice(MediaPlayerEntity):
                 self._attr_available = False
             return
 
+        # Handle None response - could mean device is off or unreachable
         if is_on is None:
+            # If we just turned the device off, it's expected to not respond
+            if self._attr_state == MediaPlayerState.OFF:
+                # Device is off, this is expected - keep it as OFF, not unavailable
+                return
+            # Otherwise, mark as unavailable (connection lost)
             if self._attr_available:
                 _LOGGER.warning(
                     "Lost connection to %s", self._config_entry.data[CONF_HOST]
@@ -449,11 +455,52 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         """Turn the device on."""
-        await self._device.pow_on(log_api_exception=False)
+        try:
+            await self._device.pow_on(log_api_exception=False)
+            # Update state immediately to reflect the change
+            self._attr_state = MediaPlayerState.ON
+            self._attr_available = True
+            # Force an update to get the actual state from the device
+            await self.async_update()
+        except Exception as err:
+            _LOGGER.error(
+                "Error turning on %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
+            )
+            # Still try to update state even if command failed
+            await self.async_update()
 
     async def async_turn_off(self) -> None:
         """Turn the device off."""
-        await self._device.pow_off(log_api_exception=False)
+        try:
+            await self._device.pow_off(log_api_exception=False)
+            # Update state immediately to reflect the change
+            self._attr_state = MediaPlayerState.OFF
+            # When device is off, clear volume and other state
+            self._attr_volume_level = None
+            self._attr_is_volume_muted = None
+            self._current_input = None
+            self._attr_app_name = None
+            self._current_app_config = None
+            self._attr_sound_mode = None
+            # Device may not respond when off, but we still know it's off
+            self._attr_available = True
+            # Try to update, but don't mark unavailable if it fails (device is off)
+            try:
+                await self.async_update()
+            except Exception:
+                # Device is off, can't query state - this is expected
+                pass
+        except Exception as err:
+            _LOGGER.error(
+                "Error turning off %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
+            )
+            # Still update state even if command failed
+            self._attr_state = MediaPlayerState.OFF
+            self._attr_available = True
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
