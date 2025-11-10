@@ -735,7 +735,30 @@ class VizioDevice(MediaPlayerEntity):
         """Select input source."""
         try:
             if source in self._available_inputs:
-                await self._device.set_input(source, log_api_exception=False)
+                try:
+                    await self._device.set_input(source, log_api_exception=False)
+                except TypeError as err:
+                    # Handle case where pyvizio fails due to None input ID
+                    # This can happen when the current input doesn't have a valid ID
+                    if "NoneType" in str(err) or "int() argument" in str(err):
+                        _LOGGER.warning(
+                            "Input selection failed due to invalid current input state on %s. "
+                            "Refreshing inputs and retrying...",
+                            self._config_entry.data[CONF_HOST],
+                        )
+                        # Refresh inputs and try again
+                        try:
+                            await self.async_update()
+                            await self._device.set_input(source, log_api_exception=False)
+                        except Exception as retry_err:
+                            _LOGGER.error(
+                                "Error selecting source %s on %s after refresh: %s",
+                                source,
+                                self._config_entry.data[CONF_HOST],
+                                retry_err,
+                            )
+                    else:
+                        raise
             elif source in self._get_additional_app_names():
                 app_config = next(
                     (app["config"] for app in self._additional_app_configs if app["name"] == source),
