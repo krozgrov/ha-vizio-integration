@@ -505,34 +505,71 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_volume_up(self) -> None:
         """Increase volume of the device."""
-        await self._device.vol_up(num=self._volume_step, log_api_exception=False)
-
-        if self._attr_volume_level is not None:
-            self._attr_volume_level = min(
-                1.0, self._attr_volume_level + self._volume_step / self._max_volume
+        try:
+            await self._device.vol_up(num=self._volume_step, log_api_exception=False)
+            # Update local state if we have a current volume level
+            if self._attr_volume_level is not None:
+                self._attr_volume_level = min(
+                    1.0, self._attr_volume_level + self._volume_step / self._max_volume
+                )
+            # Force an update to get the actual volume from the device
+            await self.async_update()
+        except Exception as err:
+            _LOGGER.error(
+                "Error increasing volume on %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
             )
 
     async def async_volume_down(self) -> None:
         """Decrease volume of the device."""
-        await self._device.vol_down(num=self._volume_step, log_api_exception=False)
-
-        if self._attr_volume_level is not None:
-            self._attr_volume_level = max(
-                0.0, self._attr_volume_level - self._volume_step / self._max_volume
+        try:
+            await self._device.vol_down(num=self._volume_step, log_api_exception=False)
+            # Update local state if we have a current volume level
+            if self._attr_volume_level is not None:
+                self._attr_volume_level = max(
+                    0.0, self._attr_volume_level - self._volume_step / self._max_volume
+                )
+            # Force an update to get the actual volume from the device
+            await self.async_update()
+        except Exception as err:
+            _LOGGER.error(
+                "Error decreasing volume on %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
             )
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level."""
-        if self._attr_volume_level is not None:
-            if volume > self._attr_volume_level:
-                num = int(self._max_volume * (volume - self._attr_volume_level))
-                await self._device.vol_up(num=num, log_api_exception=False)
+        try:
+            if self._attr_volume_level is not None:
+                # We know the current volume, calculate the difference
+                if volume > self._attr_volume_level:
+                    num = int(self._max_volume * (volume - self._attr_volume_level))
+                    await self._device.vol_up(num=num, log_api_exception=False)
+                    self._attr_volume_level = volume
+                elif volume < self._attr_volume_level:
+                    num = int(self._max_volume * (self._attr_volume_level - volume))
+                    await self._device.vol_down(num=num, log_api_exception=False)
+                    self._attr_volume_level = volume
+            else:
+                # We don't know the current volume, use set_setting to set it directly
+                volume_value = int(volume * self._max_volume)
+                await self._device.set_setting(
+                    VIZIO_AUDIO_SETTINGS,
+                    VIZIO_VOLUME,
+                    volume_value,
+                    log_api_exception=False,
+                )
                 self._attr_volume_level = volume
-
-            elif volume < self._attr_volume_level:
-                num = int(self._max_volume * (self._attr_volume_level - volume))
-                await self._device.vol_down(num=num, log_api_exception=False)
-                self._attr_volume_level = volume
+            # Force an update to get the actual volume from the device
+            await self.async_update()
+        except Exception as err:
+            _LOGGER.error(
+                "Error setting volume level on %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
+            )
 
     async def async_media_play(self) -> None:
         """Play whatever media is currently active."""
