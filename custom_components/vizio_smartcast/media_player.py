@@ -208,7 +208,11 @@ class VizioDevice(MediaPlayerEntity):
     async def async_update(self) -> None:
         """Retrieve latest state of the device."""
         try:
-            is_on = await self._device.get_power_state(log_api_exception=False)
+            # Use direct API for power state (more reliable than pyvizio)
+            if self._api_client:
+                is_on = await self._api_client.get_power_state()
+            else:
+                is_on = await self._device.get_power_state(log_api_exception=False)
         except Exception as err:
             _LOGGER.debug(
                 "Error getting power state for %s: %s",
@@ -491,13 +495,26 @@ class VizioDevice(MediaPlayerEntity):
                     host,
                 )
                 
-                # Send power on command - use direct API client
+                # Send power on command - use direct API client (more reliable than pyvizio)
                 if self._api_client:
                     success = await self._api_client.power_on()
                     if not success:
-                        _LOGGER.debug("Direct API power on command failed, trying pyvizio fallback")
-                        await self._device.pow_on(log_api_exception=False)
+                        _LOGGER.warning(
+                            "Direct API power on command failed for %s, trying pyvizio fallback",
+                            host,
+                        )
+                        # Fallback to pyvizio only if direct API fails
+                        try:
+                            await self._device.pow_on(log_api_exception=False)
+                        except Exception as pyvizio_err:
+                            _LOGGER.error(
+                                "Both direct API and pyvizio power on failed for %s: %s",
+                                host,
+                                pyvizio_err,
+                            )
                 else:
+                    # No API client available, use pyvizio
+                    _LOGGER.debug("No direct API client, using pyvizio for power on")
                     await self._device.pow_on(log_api_exception=False)
                 
                 # Wait before checking - don't poll frequently as it can overwhelm the TV
@@ -615,13 +632,26 @@ class VizioDevice(MediaPlayerEntity):
                     host,
                 )
                 
-                # Use direct API client for power off
+                # Use direct API client for power off (more reliable than pyvizio)
                 if self._api_client:
                     success = await self._api_client.power_off()
                     if not success:
-                        _LOGGER.debug("Direct API power off command failed, trying pyvizio fallback")
-                        await self._device.pow_off(log_api_exception=False)
+                        _LOGGER.warning(
+                            "Direct API power off command failed for %s, trying pyvizio fallback",
+                            host,
+                        )
+                        # Fallback to pyvizio only if direct API fails
+                        try:
+                            await self._device.pow_off(log_api_exception=False)
+                        except Exception as pyvizio_err:
+                            _LOGGER.error(
+                                "Both direct API and pyvizio power off failed for %s: %s",
+                                host,
+                                pyvizio_err,
+                            )
                 else:
+                    # No API client available, use pyvizio
+                    _LOGGER.debug("No direct API client, using pyvizio for power off")
                     await self._device.pow_off(log_api_exception=False)
                 
                 # Wait a moment for device to respond
