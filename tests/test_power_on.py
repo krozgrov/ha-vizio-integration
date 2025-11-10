@@ -183,11 +183,20 @@ async def main() -> None:
     initial_state = await test_power_state(device, "Initial state")
     
     if initial_state:
-        print("\n⚠️  Device is already ON. Please turn it off first to test power on.")
-        response = input("Continue anyway? (y/n): ")
-        if response.lower() != "y":
-            print("Exiting...")
-            return
+        print("\n⚠️  Device is already ON. Turning it off first...")
+        try:
+            await device.pow_off(log_api_exception=False)
+            print("    Power off command sent, waiting 3s...")
+            await asyncio.sleep(3.0)
+            # Verify it's off
+            power_state = await device.get_power_state(log_api_exception=False)
+            if power_state:
+                print("    Warning: Device still appears to be ON")
+            else:
+                print("    ✓ Device is now OFF - ready to test power on")
+        except Exception as e:
+            print(f"    Error turning off device: {e}")
+            print("    Continuing with test anyway...")
     else:
         print("\n✓ Device is OFF - ready to test power on")
     

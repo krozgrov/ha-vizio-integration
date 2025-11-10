@@ -456,76 +456,72 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         """Turn the device on."""
-        max_retries = 3
-        retry_delay = 1.0  # seconds
-        
-        for attempt in range(max_retries):
+        try:
+            # Send power on command
+            await self._device.pow_on(log_api_exception=False)
+            
+            # Give the device a moment to respond (test shows 0.5s is sufficient)
+            await asyncio.sleep(0.5)
+            
+            # Verify the device turned on by checking power state
             try:
-                await self._device.pow_on(log_api_exception=False)
-                # Give the device a moment to respond
-                await asyncio.sleep(0.5)
-                
-                # Verify the device turned on by checking power state
                 power_state = await self._device.get_power_state(log_api_exception=False)
                 if power_state:
-                    # Device is on, update state
+                    # Device is confirmed on
                     self._attr_state = MediaPlayerState.ON
                     self._attr_available = True
                     _LOGGER.debug(
-                        "Successfully turned on %s (attempt %d/%d)",
-                        self._config_entry.data[CONF_HOST],
-                        attempt + 1,
-                        max_retries,
-                    )
-                    # Force an update to get the actual state from the device
-                    await self.async_update()
-                    return
-                elif attempt < max_retries - 1:
-                    # Device didn't turn on, retry
-                    _LOGGER.debug(
-                        "Power on attempt %d/%d failed for %s, retrying...",
-                        attempt + 1,
-                        max_retries,
+                        "Successfully turned on %s",
                         self._config_entry.data[CONF_HOST],
                     )
-                    await asyncio.sleep(retry_delay)
-                    continue
                 else:
-                    # Last attempt failed
-                    _LOGGER.warning(
-                        "Power on command sent to %s but device did not turn on after %d attempts",
-                        self._config_entry.data[CONF_HOST],
-                        max_retries,
-                    )
-                    # Still update state optimistically
-                    self._attr_state = MediaPlayerState.ON
-                    self._attr_available = True
-                    await self.async_update()
-                    return
-                    
-            except Exception as err:
-                if attempt < max_retries - 1:
+                    # Device didn't turn on, try one more time
                     _LOGGER.debug(
-                        "Error turning on %s (attempt %d/%d): %s, retrying...",
+                        "Power on verification failed for %s, retrying once...",
                         self._config_entry.data[CONF_HOST],
-                        attempt + 1,
-                        max_retries,
-                        err,
                     )
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    _LOGGER.error(
-                        "Error turning on %s after %d attempts: %s",
-                        self._config_entry.data[CONF_HOST],
-                        max_retries,
-                        err,
-                    )
-                    # Still try to update state even if command failed
-                    self._attr_state = MediaPlayerState.ON
-                    self._attr_available = True
-                    await self.async_update()
-                    return
+                    await self._device.pow_on(log_api_exception=False)
+                    await asyncio.sleep(1.0)
+                    power_state = await self._device.get_power_state(log_api_exception=False)
+                    if power_state:
+                        self._attr_state = MediaPlayerState.ON
+                        self._attr_available = True
+                        _LOGGER.debug(
+                            "Successfully turned on %s on retry",
+                            self._config_entry.data[CONF_HOST],
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Power on command sent to %s but device did not turn on",
+                            self._config_entry.data[CONF_HOST],
+                        )
+                        # Update state optimistically anyway
+                        self._attr_state = MediaPlayerState.ON
+                        self._attr_available = True
+            except Exception as verify_err:
+                # Error checking power state, but command was sent
+                _LOGGER.debug(
+                    "Could not verify power state for %s: %s",
+                    self._config_entry.data[CONF_HOST],
+                    verify_err,
+                )
+                # Update state optimistically
+                self._attr_state = MediaPlayerState.ON
+                self._attr_available = True
+            
+            # Force an update to get the actual state from the device
+            await self.async_update()
+            
+        except Exception as err:
+            _LOGGER.error(
+                "Error turning on %s: %s",
+                self._config_entry.data[CONF_HOST],
+                err,
+            )
+            # Still try to update state even if command failed
+            self._attr_state = MediaPlayerState.ON
+            self._attr_available = True
+            await self.async_update()
 
     async def async_turn_off(self) -> None:
         """Turn the device off."""
