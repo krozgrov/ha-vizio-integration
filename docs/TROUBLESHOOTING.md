@@ -68,7 +68,19 @@ This error occurs when Home Assistant has a reference to an old integration doma
 
 ### Power Control Issues
 
-- **Power on not working**: Check network connectivity and ensure device supports wake-on-LAN or SmartCast power commands
+- **Power on takes longer than expected**: Some Vizio TV models (e.g., VFD40M-0809) may take 5-10 seconds or longer to turn on after receiving the power command, especially when completely powered off. The integration will:
+  - Send the power on command
+  - Wait up to 6 seconds on the first attempt, checking state every 1 second
+  - Retry up to 3 times if needed
+  - Log when the TV successfully turns on
+  - **Note**: Be patient - the TV may take time to wake from a completely off state
+  
+- **Power on not working**: If power on consistently fails:
+  - Check network connectivity - the TV must be reachable on your network
+  - Verify the access token is valid (try re-pairing if needed)
+  - Some TVs may require the TV to be in standby mode (not completely off) for power on to work
+  - Try manually turning the TV on with the remote first, then test power off/on via the integration
+  
 - **Device shows unavailable when off**: This is expected - the device may not respond when powered off. The integration will show it as OFF, not unavailable.
 
 ### Connection Lost
