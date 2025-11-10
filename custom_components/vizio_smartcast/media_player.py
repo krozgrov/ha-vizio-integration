@@ -589,26 +589,15 @@ class VizioDevice(MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level."""
         try:
-            if self._attr_volume_level is not None:
-                # We know the current volume, calculate the difference
-                if volume > self._attr_volume_level:
-                    num = int(self._max_volume * (volume - self._attr_volume_level))
-                    await self._device.vol_up(num=num, log_api_exception=False)
-                    self._attr_volume_level = volume
-                elif volume < self._attr_volume_level:
-                    num = int(self._max_volume * (self._attr_volume_level - volume))
-                    await self._device.vol_down(num=num, log_api_exception=False)
-                    self._attr_volume_level = volume
-            else:
-                # We don't know the current volume, use set_setting to set it directly
-                volume_value = int(volume * self._max_volume)
-                await self._device.set_setting(
-                    VIZIO_AUDIO_SETTINGS,
-                    VIZIO_VOLUME,
-                    volume_value,
-                    log_api_exception=False,
-                )
-                self._attr_volume_level = volume
+            # Always use set_setting to set volume directly (faster and more accurate)
+            volume_value = int(volume * self._max_volume)
+            await self._device.set_setting(
+                VIZIO_AUDIO_SETTINGS,
+                VIZIO_VOLUME,
+                volume_value,
+                log_api_exception=False,
+            )
+            self._attr_volume_level = volume
             # Force an update to get the actual volume from the device
             await self.async_update()
         except Exception as err:
