@@ -575,34 +575,141 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_turn_off(self) -> None:
         """Turn the device off."""
-        try:
-            await self._device.pow_off(log_api_exception=False)
-            # Update state immediately to reflect the change
-            self._attr_state = MediaPlayerState.OFF
-            # When device is off, clear volume and other state
-            self._attr_volume_level = None
-            self._attr_is_volume_muted = None
-            self._current_input = None
-            self._attr_app_name = None
-            self._current_app_config = None
-            self._attr_sound_mode = None
-            # Device may not respond when off, but we still know it's off
-            self._attr_available = True
-            # Try to update, but don't mark unavailable if it fails (device is off)
+        host = self._config_entry.data[CONF_HOST]
+        max_attempts = 3
+        
+        _LOGGER.info("Attempting to turn off %s", host)
+        
+        for attempt in range(max_attempts):
             try:
-                await self.async_update()
-            except Exception:
-                # Device is off, can't query state - this is expected
-                pass
-        except Exception as err:
-            _LOGGER.error(
-                "Error turning off %s: %s",
-                self._config_entry.data[CONF_HOST],
-                err,
-            )
-            # Still update state even if command failed
-            self._attr_state = MediaPlayerState.OFF
-            self._attr_available = True
+                _LOGGER.debug(
+                    "Power off attempt %d/%d for %s",
+                    attempt + 1,
+                    max_attempts,
+                    host,
+                )
+                
+                await self._device.pow_off(log_api_exception=False)
+                
+                # Wait a moment for device to respond
+                await asyncio.sleep(1.0)
+                
+                # Verify the device turned off
+                try:
+                    power_state = await self._device.get_power_state(log_api_exception=False)
+                    if not power_state:
+                        # Device is confirmed off
+                        self._attr_state = MediaPlayerState.OFF
+                        # When device is off, clear volume and other state
+                        self._attr_volume_level = None
+                        self._attr_is_volume_muted = None
+                        self._current_input = None
+                        self._attr_app_name = None
+                        self._current_app_config = None
+                        self._attr_sound_mode = None
+                        self._attr_available = True
+                        _LOGGER.info(
+                            "Successfully turned off %s (attempt %d/%d)",
+                            host,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        # Try to update, but don't mark unavailable if it fails (device is off)
+                        try:
+                            await self.async_update()
+                        except Exception:
+                            # Device is off, can't query state - this is expected
+                            pass
+                        return
+                    else:
+                        _LOGGER.debug(
+                            "Power off verification failed for %s (attempt %d/%d), device still on",
+                            host,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        if attempt < max_attempts - 1:
+                            continue
+                        else:
+                            # Some TVs don't respond to power off via API
+                            _LOGGER.warning(
+                                "Power off command sent to %s %d times but device may not support remote power off",
+                                host,
+                                max_attempts,
+                            )
+                            # Update state optimistically anyway
+                            self._attr_state = MediaPlayerState.OFF
+                            self._attr_volume_level = None
+                            self._attr_is_volume_muted = None
+                            self._current_input = None
+                            self._attr_app_name = None
+                            self._current_app_config = None
+                            self._attr_sound_mode = None
+                            self._attr_available = True
+                            try:
+                                await self.async_update()
+                            except Exception:
+                                pass
+                            return
+                except Exception as verify_err:
+                    # Error checking power state, but command was sent
+                    _LOGGER.debug(
+                        "Could not verify power state for %s (attempt %d/%d): %s",
+                        host,
+                        attempt + 1,
+                        max_attempts,
+                        verify_err,
+                    )
+                    if attempt < max_attempts - 1:
+                        continue
+                    else:
+                        # Update state optimistically
+                        self._attr_state = MediaPlayerState.OFF
+                        self._attr_volume_level = None
+                        self._attr_is_volume_muted = None
+                        self._current_input = None
+                        self._attr_app_name = None
+                        self._current_app_config = None
+                        self._attr_sound_mode = None
+                        self._attr_available = True
+                        try:
+                            await self.async_update()
+                        except Exception:
+                            pass
+                        return
+                        
+            except Exception as err:
+                _LOGGER.warning(
+                    "Error turning off %s (attempt %d/%d): %s",
+                    host,
+                    attempt + 1,
+                    max_attempts,
+                    err,
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                else:
+                    _LOGGER.error(
+                        "Failed to turn off %s after %d attempts: %s",
+                        host,
+                        max_attempts,
+                        err,
+                    )
+                    # Still update state even if command failed
+                    self._attr_state = MediaPlayerState.OFF
+                    self._attr_volume_level = None
+                    self._attr_is_volume_muted = None
+                    self._current_input = None
+                    self._attr_app_name = None
+                    self._current_app_config = None
+                    self._attr_sound_mode = None
+                    self._attr_available = True
+                    try:
+                        await self.async_update()
+                    except Exception:
+                        pass
+                    return
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
