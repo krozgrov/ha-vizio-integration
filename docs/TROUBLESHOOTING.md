@@ -68,10 +68,10 @@ This error occurs when Home Assistant has a reference to an old integration doma
 
 ### Power Control Issues
 
-- **Power on takes longer than expected**: Some Vizio TV models (e.g., VFD40M-0809) may take 8-10 seconds or longer to turn on after receiving the power command, especially when completely powered off. The integration will:
+- **Power on takes longer than expected**: Some Vizio TV models (e.g., VFD40M-0809) may take 2-5 seconds to turn on after receiving the power command. The integration will:
   - Send the power on command
-  - Wait 8 seconds on the first attempt before checking state (to avoid overwhelming the TV with too many API calls)
-  - Retry once more if needed (waiting 5 seconds)
+  - Wait 5 seconds on the first attempt before checking state (to avoid overwhelming the TV with too many API calls)
+  - Retry once more if needed (waiting 3 seconds)
   - Log when the TV successfully turns on
   - **Note**: Be patient - the TV may take time to wake from a completely off state. Frequent API calls can cause the TV to become unresponsive.
   
