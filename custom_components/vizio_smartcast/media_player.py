@@ -464,8 +464,8 @@ class VizioDevice(MediaPlayerEntity):
         """Turn the device on."""
         host = self._config_entry.data[CONF_HOST]
         max_attempts = 5
-        initial_delay = 0.5
-        retry_delay = 1.0
+        initial_delay = 2.0  # Increased to 2s - some TVs take longer to respond
+        retry_delay = 1.5  # Increased retry delay
         
         _LOGGER.info("Attempting to turn on %s", host)
         
