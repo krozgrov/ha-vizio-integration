@@ -16,7 +16,7 @@ This integration follows a date-based versioning scheme aligned with the release
 - `2025.11.10` - Release on November 10, 2025
 - `2025.12.1` - Release on December 1, 2025
 
-### Testing/Beta Releases
+### Testing/Beta Releases (Pre-releases)
 **Format**: `YYYY.MM.DDb#`
 
 - `YYYY.MM.DD` = Base release date
@@ -29,41 +29,146 @@ This integration follows a date-based versioning scheme aligned with the release
 
 ## Release Workflow
 
-### For Testing (Beta Releases)
-1. Create a feature branch: `bug/description` or `feature/description`
-2. Make changes and commit
-3. Update `manifest.json` version to: `YYYY.MM.DDb#` (e.g., `2025.11.9b3`)
-4. Create tag: `git tag -a 2025.11.9b3 -m "Pre-release message"`
-5. Push branch and tag
-6. Create GitHub release (mark as pre-release)
+### Step 1: Development on Feature Branch
+1. Create a feature branch from `main`:
+   ```bash
+   git checkout main
+   git pull origin main
+   git checkout -b feature/power-on-fix
+   # or
+   git checkout -b bug/volume-control
+   ```
 
-### For Production Releases
-1. Merge feature branch to `main`
-2. Update `manifest.json` version to: `YYYY.MM.DD` (e.g., `2025.11.10`)
-3. Create tag: `git tag -a 2025.11.10 -m "Release message"`
-4. Push to main and tag
-5. Create GitHub release (not pre-release)
+2. Make your changes and commit:
+   ```bash
+   git add .
+   git commit -m "Fix power on functionality"
+   ```
+
+### Step 2: Create Pre-release for Testing
+1. Update `manifest.json` version to: `YYYY.MM.DDb#` (e.g., `2025.11.9b1`)
+   ```bash
+   # Edit manifest.json: "version": "2025.11.9b1"
+   ```
+
+2. Commit the version bump:
+   ```bash
+   git add custom_components/vizio_smartcast/manifest.json
+   git commit -m "Bump version to 2025.11.9b1 for testing"
+   ```
+
+3. Create and push the tag:
+   ```bash
+   git tag -a 2025.11.9b1 -m "Pre-release 2025.11.9b1: Power on fix"
+   git push origin feature/power-on-fix
+   git push origin 2025.11.9b1
+   ```
+
+4. Create GitHub pre-release:
+   ```bash
+   gh release create 2025.11.9b1 --title "Pre-release 2025.11.9b1" \
+     --notes "Testing: Power on fix" \
+     --prerelease \
+     --target feature/power-on-fix
+   ```
+
+### Step 3: Test Pre-release
+- Install pre-release in Home Assistant via HACS
+- Test the changes thoroughly
+- If issues found, fix on feature branch and create new pre-release (b2, b3, etc.)
+
+### Step 4: Merge to Main (Production Release)
+1. Once pre-release is tested and approved, merge to main:
+   ```bash
+   git checkout main
+   git pull origin main
+   git merge feature/power-on-fix
+   ```
+
+2. Update `manifest.json` version to production: `YYYY.MM.DD` (e.g., `2025.11.9`)
+   ```bash
+   # Edit manifest.json: "version": "2025.11.9"
+   ```
+
+3. Commit the version bump:
+   ```bash
+   git add custom_components/vizio_smartcast/manifest.json
+   git commit -m "Bump version to 2025.11.9 for production release"
+   ```
+
+4. Create and push the production tag:
+   ```bash
+   git tag -a 2025.11.9 -m "Release 2025.11.9: Power on fix"
+   git push origin main
+   git push origin 2025.11.9
+   ```
+
+5. Create GitHub production release:
+   ```bash
+   gh release create 2025.11.9 --title "Release 2025.11.9" \
+     --notes "Production release: Power on fix" \
+     --target main
+   ```
 
 ## Version Increment Rules
 
-- **New day = New production release**: If releasing on a different day, increment the day
-- **Same day, testing = Beta**: If testing on the same day, use beta version (b1, b2, etc.)
-- **Multiple releases per day**: Use beta versions for testing, then final production release
+- **Pre-releases**: Always use `YYYY.MM.DDb#` format on feature branches
+- **Production releases**: Use `YYYY.MM.DD` format on `main` branch
+- **Same day releases**: Use beta versions (b1, b2) for testing, then production version for final release
+- **New day releases**: Use new date for production release
 
 ## Examples
 
-### Scenario 1: Testing on same day
-- Start: `2025.11.9` (production)
-- Testing: `2025.11.9b1`, `2025.11.9b2` (betas)
-- Final: `2025.11.9` (or new day if released later)
+### Example Workflow: Power On Fix
 
-### Scenario 2: New day release
-- Previous: `2025.11.9` (production)
-- New release: `2025.11.10` (production on next day)
+1. **Create feature branch**:
+   ```bash
+   git checkout -b feature/power-on-fix
+   ```
 
-### Scenario 3: Testing then production
-- Testing: `2025.11.9b1`, `2025.11.9b2` (betas)
-- Production: `2025.11.10` (released next day)
+2. **Make changes and commit**:
+   ```bash
+   # Make code changes
+   git commit -m "Fix power on functionality"
+   ```
+
+3. **Create pre-release**:
+   ```bash
+   # Update manifest.json to 2025.11.9b1
+   git commit -m "Bump version to 2025.11.9b1"
+   git tag -a 2025.11.9b1 -m "Pre-release: Power on fix"
+   git push origin feature/power-on-fix
+   git push origin 2025.11.9b1
+   gh release create 2025.11.9b1 --prerelease --target feature/power-on-fix
+   ```
+
+4. **Test pre-release in Home Assistant**
+
+5. **Merge to main**:
+   ```bash
+   git checkout main
+   git merge feature/power-on-fix
+   # Update manifest.json to 2025.11.9
+   git commit -m "Bump version to 2025.11.9"
+   git tag -a 2025.11.9 -m "Release 2025.11.9"
+   git push origin main
+   git push origin 2025.11.9
+   gh release create 2025.11.9 --target main
+   ```
+
+## Branch Naming Conventions
+
+- `feature/description` - New features
+- `bug/description` - Bug fixes
+- `fix/description` - Quick fixes
+- `test/description` - Testing changes
+
+## Important Notes
+
+- **Never commit directly to `main`** - Always use feature branches
+- **Pre-releases are for testing** - Mark as pre-release on GitHub
+- **Production releases are final** - Only on `main` branch
+- **Version in manifest.json must match tag** - Always keep them in sync
 
 ## Notes
 
