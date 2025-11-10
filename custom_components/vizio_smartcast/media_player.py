@@ -405,9 +405,15 @@ class VizioDevice(MediaPlayerEntity):
     @property
     def source(self) -> str | None:
         """Return current input of the device."""
+        # If we have an app name and we're on a SmartCast input, show the app name
         if self._attr_app_name is not None and self._current_input in INPUT_APPS:
             return self._attr_app_name
-
+        
+        # If we're on a SmartCast input but no app is running, show a more descriptive name
+        if self._current_input in INPUT_APPS and self._attr_app_name is None:
+            return f"{self._current_input} (No App)"
+        
+        # Otherwise, return the current input (HDMI 1, HDMI 2, etc.)
         return self._current_input
 
     @property
