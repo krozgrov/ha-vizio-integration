@@ -135,7 +135,24 @@ class VizioAPIClient:
         response = await self._request("PUT", ENDPOINT_KEY_COMMAND, data)
         if response:
             status = response.get("STATUS", {})
-            return status.get("RESULT") == "SUCCESS"
+            result = status.get("RESULT")
+            if result == "SUCCESS":
+                return True
+            else:
+                _LOGGER.debug(
+                    "Key command failed: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s",
+                    codeset,
+                    code,
+                    result,
+                    status.get("DETAIL", "Unknown"),
+                )
+                return False
+        else:
+            _LOGGER.debug(
+                "Key command request failed: CODESET=%d, CODE=%d (no response)",
+                codeset,
+                code,
+            )
         return False
 
     async def get_current_input(self) -> dict[str, Any] | None:
