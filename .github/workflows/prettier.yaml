@@ -1,18 +1,19 @@
-name: Prettier
+name: Prettier YAML Check
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   prettier:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+
+      - name: Run Prettier for YAML files
+        uses: creyD/prettier_action@v4.6
         with:
-          node-version: "20"
-      - name: Install Prettier
-        run: npm install --global prettier
-      - name: Run Prettier
-        run: prettier --check .
+          prettier_options: "--check '**/*.{yaml,yml}'"
