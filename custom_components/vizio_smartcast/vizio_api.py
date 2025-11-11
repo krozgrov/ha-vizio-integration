@@ -42,15 +42,23 @@ class VizioAPIClient:
         self.timeout = timeout
         
         # Handle host that might already include port (e.g., "192.168.1.226:7345")
-        if ":" in host:
-            # Host already includes port
-            self.host = host.split(":")[0]
-            self.port = int(host.split(":")[1])
+        # Check if host contains a colon (IPv6 addresses also use colons, but not in this context)
+        if ":" in host and not host.startswith("["):
+            # Host already includes port (format: "host:port")
+            parts = host.rsplit(":", 1)  # Use rsplit to handle IPv6 addresses correctly
+            self.host = parts[0]
+            try:
+                self.port = int(parts[1])
+            except (ValueError, IndexError):
+                # Invalid port format, use default
+                self.host = host
+                self.port = port
         else:
             self.host = host
             self.port = port
         
         self.base_url = f"https://{self.host}:{self.port}"
+        _LOGGER.debug("Direct API client initialized: host=%s, port=%d, base_url=%s", self.host, self.port, self.base_url)
 
     async def _request(
         self,
