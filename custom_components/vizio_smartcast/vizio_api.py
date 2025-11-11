@@ -67,21 +67,37 @@ class VizioAPIClient:
                 timeout=self.timeout,
             ) as response:
                 if response.status == 200:
-                    return await response.json()
+                    try:
+                        # Try to parse as JSON first
+                        json_data = await response.json()
+                        return json_data
+                    except Exception as json_err:
+                        # If JSON parsing fails, get text for logging
+                        response_text = await response.text()
+                        _LOGGER.warning(
+                            "API response is not JSON for %s %s: %s, Response: %s",
+                            method,
+                            endpoint,
+                            json_err,
+                            response_text[:200],
+                        )
+                        return None
                 else:
-                    _LOGGER.debug(
+                    # Non-200 status, get text for logging
+                    response_text = await response.text()
+                    _LOGGER.warning(
                         "API request failed: %s %s - Status: %s, Response: %s",
                         method,
                         endpoint,
                         response.status,
-                        await response.text() if response.status != 200 else "",
+                        response_text[:500],
                     )
                     return None
         except asyncio.TimeoutError:
-            _LOGGER.debug("API request timeout: %s %s", method, endpoint)
+            _LOGGER.warning("API request timeout: %s %s", method, endpoint)
             return None
         except Exception as err:
-            _LOGGER.debug("API request error: %s %s - %s", method, endpoint, err)
+            _LOGGER.warning("API request error: %s %s - %s", method, endpoint, err)
             return None
 
     async def get_power_state(self) -> bool | None:
@@ -132,24 +148,46 @@ class VizioAPIClient:
                 }
             ]
         }
+        _LOGGER.debug(
+            "Sending key command: CODESET=%d, CODE=%d to %s",
+            codeset,
+            code,
+            self.base_url + ENDPOINT_KEY_COMMAND,
+        )
         response = await self._request("PUT", ENDPOINT_KEY_COMMAND, data)
         if response:
             status = response.get("STATUS", {})
-            result = status.get("RESULT")
+            result = status.get("RESULT", "").upper() if status.get("RESULT") else ""
+            detail = status.get("DETAIL", "Unknown")
+            _LOGGER.debug(
+                "Key command response: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s, Full response: %s",
+                codeset,
+                code,
+                result,
+                detail,
+                response,
+            )
+            # Accept SUCCESS (case-insensitive) as success
             if result == "SUCCESS":
+                _LOGGER.debug(
+                    "Key command succeeded: CODESET=%d, CODE=%d",
+                    codeset,
+                    code,
+                )
                 return True
             else:
-                _LOGGER.debug(
-                    "Key command failed: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s",
+                _LOGGER.warning(
+                    "Key command failed: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s, Full response: %s",
                     codeset,
                     code,
                     result,
-                    status.get("DETAIL", "Unknown"),
+                    detail,
+                    response,
                 )
                 return False
         else:
-            _LOGGER.debug(
-                "Key command request failed: CODESET=%d, CODE=%d (no response)",
+            _LOGGER.warning(
+                "Key command request failed: CODESET=%d, CODE=%d (no response from API)",
                 codeset,
                 code,
             )
