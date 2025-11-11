@@ -102,11 +102,10 @@ htmlcov/
 
 
 
-# Documentation (generated/temporary markdown files)
+# Documentation (generated/temporary markdown files only)
+# Note: docs/ folder itself is tracked, only temp files are ignored
 
 docs/*.tmp.md
-
 docs/*.generated.md
-
 *.md.bak
 

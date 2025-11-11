@@ -83,6 +83,32 @@ This error occurs when Home Assistant has a reference to an old integration doma
   
 - **Device shows unavailable when off**: This is expected - the device may not respond when powered off. The integration will show it as OFF, not unavailable.
 
+### Input Selection Not Working
+
+**Symptoms:**
+- Input selection fails even though `ITEMS[0].HASHVAL` is present
+- API returns `FAILURE` when trying to change physical inputs (HDMI-1, HDMI-2, COMP, TV, CAST)
+- Apps (Netflix, HBOMax, etc.) may still work
+
+**Known Issues:**
+
+1. **TV models without `ITEMS[0].HASHVAL`**:
+   - Some TV models (e.g., VFD40M-0809) don't provide `HASHVAL` in `ITEMS[0]`
+   - This makes programmatic input selection impossible
+   - Check logs for: "Could not extract current input HASHVAL from ITEMS[0].HASHVAL"
+
+2. **Firmware updates breaking input selection**:
+   - Some TV models (e.g., V505-J09 with firmware 1.520.24.2-2+) provide `ITEMS[0].HASHVAL` but still return `FAILURE` when attempting to change physical inputs
+   - This appears to be a firmware bug introduced in certain Vizio updates
+   - See [GitHub Issue #36](https://github.com/exiva/Vizio_SmartCast_API/issues/36) for details
+   - **Workaround**: Apps may still work, but physical input selection is broken on affected models
+
+**Solutions:**
+- Check your TV model and firmware version
+- If `ITEMS[0].HASHVAL` is missing: Input selection is not supported on this TV model
+- If `ITEMS[0].HASHVAL` is present but still fails: This is a known firmware limitation - physical input selection may not work, but apps should still function
+- Consider using the TV's remote or physical buttons for input selection on affected models
+
 ### Connection Lost
 
 - Verify network connectivity

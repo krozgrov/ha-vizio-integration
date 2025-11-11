@@ -70,6 +70,29 @@ VIZIO_MUTE_ON = "on"
 VIZIO_VOLUME = "volume"
 VIZIO_MUTE = "mute"
 
+# Vizio SmartCast API Key Command Constants
+# These define the CODESET and CODE values for various remote control commands
+KEY_CODESET_POWER = 11
+KEY_CODE_POWER_ON = 1
+KEY_CODE_POWER_OFF = 0
+
+KEY_CODESET_VOLUME = 5
+KEY_CODE_VOLUME_UP = 2
+KEY_CODE_VOLUME_DOWN = 3
+KEY_CODE_MUTE = 4
+
+KEY_CODESET_INPUT = 7  # Input selection codeset (codes not documented)
+
+# API Endpoints
+ENDPOINT_KEY_COMMAND = "/key_command/"
+ENDPOINT_POWER_MODE = "/state/device/power_mode"
+ENDPOINT_CURRENT_INPUT = "/state/device/current_input"
+ENDPOINT_INPUT_LIST = "/menu_native/dynamic/tv_settings/devices/name_input"
+ENDPOINT_CHANGE_INPUT = "/menu_native/dynamic/tv_settings/devices/current_input"
+ENDPOINT_AUDIO_SETTING = "/menu_native/dynamic/tv_settings/audio/{setting_name}"
+ENDPOINT_GET_AUDIO_SETTING = "/menu_native/dynamic/tv_settings/audio"
+ENDPOINT_TV_INFORMATION = "/menu_native/dynamic/tv_settings/system/tv_information/tv"
+
 # Since Vizio component relies on device class, this dict will ensure that changes to
 # the values of DEVICE_CLASS_SPEAKER or DEVICE_CLASS_TV don't require changes to pyvizio.
 VIZIO_DEVICE_CLASSES = {

@@ -2,9 +2,89 @@
 
 This directory contains test scripts for debugging and testing the Vizio integration.
 
-## Power On Test Script
+## Direct API Test Tool (Recommended)
 
-`test_power_on.py` - Tests different power on methods to determine the best approach for your Vizio device.
+`test_direct_api.py` - **Standalone test tool for direct API calls** - Test API functionality without Home Assistant.
+
+### Prerequisites
+
+Install aiohttp:
+```bash
+pip install aiohttp
+```
+
+### Usage
+
+```bash
+python tests/test_direct_api.py <host> <token> [command] [args...]
+```
+
+**Arguments:**
+- `host`: IP address or hostname of your Vizio device
+- `token`: Access token (use "none" if not needed for speakers)
+- `command`: Command to test (see below)
+- `args...`: Additional arguments for specific commands
+
+### Commands
+
+- `power-state` - Get current power state
+- `power-on` - Turn device on
+- `power-off` - Turn device off
+- `volume-up [n]` - Volume up (n times, default 1)
+- `volume-down [n]` - Volume down (n times, default 1)
+- `mute` - Toggle mute
+- `current-input` - Get current input
+- `input-list` - List available inputs
+- `set-input <name>` - Set input by name
+- `audio-settings` - Get all audio settings
+- `test-all` - Run all tests (except power on/off)
+
+### Examples
+
+**Get power state:**
+```bash
+python tests/test_direct_api.py 192.168.1.226 Za8cqlwuz0 power-state
+```
+
+**Turn device on:**
+```bash
+python tests/test_direct_api.py 192.168.1.226 Za8cqlwuz0 power-on
+```
+
+**Set input:**
+```bash
+python tests/test_direct_api.py 192.168.1.226 Za8cqlwuz0 set-input HDMI-1
+```
+
+**Run all tests:**
+```bash
+python tests/test_direct_api.py 192.168.1.226 Za8cqlwuz0 test-all
+```
+
+**Volume up 5 times:**
+```bash
+python tests/test_direct_api.py 192.168.1.226 Za8cqlwuz0 volume-up 5
+```
+
+### Features
+
+- ✅ No Home Assistant dependencies
+- ✅ Comprehensive logging (debug level)
+- ✅ Tests all direct API methods
+- ✅ Easy to use CLI interface
+- ✅ Perfect for rapid development and testing
+
+### Debug Logging
+
+The script uses debug logging by default. You'll see:
+- All API requests (method, URL, data)
+- All API responses (status, headers, body)
+- Detailed error information
+- Power state values and parsing
+
+## Power On Test Script (Legacy)
+
+`test_power_on.py` - Tests different power on methods using pyvizio (legacy).
 
 ### Prerequisites
 

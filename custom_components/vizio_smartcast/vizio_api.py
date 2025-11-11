@@ -2,7 +2,20 @@
 
 This module provides direct API calls to Vizio SmartCast devices,
 bypassing pyvizio for operations that are failing or unreliable.
+
+This is a lightweight API client library embedded within the integration,
+following Home Assistant best practices for device communication:
+- Clean separation of API logic from entity logic
+- Comprehensive error handling and logging
+- Direct control over API calls and responses
+- No external dependencies beyond Home Assistant core
+
 Based on: https://github.com/exiva/Vizio_SmartCast_API
+
+Logging:
+- Debug level: Detailed request/response information for troubleshooting
+- Warning level: Errors and failures that may need attention
+- Info level: Important state changes (if needed)
 """
 
 from __future__ import annotations
@@ -13,16 +26,25 @@ from typing import Any
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-_LOGGER = logging.getLogger(__name__)
+from .const import (
+    ENDPOINT_AUDIO_SETTING,
+    ENDPOINT_CHANGE_INPUT,
+    ENDPOINT_CURRENT_INPUT,
+    ENDPOINT_GET_AUDIO_SETTING,
+    ENDPOINT_INPUT_LIST,
+    ENDPOINT_KEY_COMMAND,
+    ENDPOINT_POWER_MODE,
+    ENDPOINT_TV_INFORMATION,
+    KEY_CODESET_POWER,
+    KEY_CODESET_VOLUME,
+    KEY_CODE_MUTE,
+    KEY_CODE_POWER_OFF,
+    KEY_CODE_POWER_ON,
+    KEY_CODE_VOLUME_DOWN,
+    KEY_CODE_VOLUME_UP,
+)
 
-# API endpoints
-ENDPOINT_KEY_COMMAND = "/key_command/"
-ENDPOINT_POWER_MODE = "/state/device/power_mode"
-ENDPOINT_CURRENT_INPUT = "/state/device/current_input"
-ENDPOINT_INPUT_LIST = "/menu_native/dynamic/tv_settings/devices/name_input"
-ENDPOINT_CHANGE_INPUT = "/menu_native/dynamic/tv_settings/devices/current_input"
-ENDPOINT_AUDIO_SETTING = "/menu_native/dynamic/tv_settings/audio/{setting_name}"
-ENDPOINT_GET_AUDIO_SETTING = "/menu_native/dynamic/tv_settings/audio"
+_LOGGER = logging.getLogger(__name__)
 
 
 class VizioAPIClient:
@@ -66,12 +88,37 @@ class VizioAPIClient:
         endpoint: str,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        """Make an API request."""
+        """Make an API request.
+        
+        Args:
+            method: HTTP method (GET, PUT, POST, etc.)
+            endpoint: API endpoint path
+            data: Optional JSON data for request body
+            
+        Returns:
+            Parsed JSON response dict, or None if request failed
+        """
         url = f"{self.base_url}{endpoint}"
         headers = {"Content-Type": "application/json"}
         
+        # Mask auth token in logs for security
+        auth_header = None
         if self.auth_token:
             headers["AUTH"] = self.auth_token
+            auth_header = f"{self.auth_token[:4]}...{self.auth_token[-4:]}" if len(self.auth_token) > 8 else "***"
+        
+        # Log request details at debug level
+        _LOGGER.debug(
+            "API request: %s %s (host=%s, port=%d, auth=%s, timeout=%ds)",
+            method,
+            endpoint,
+            self.host,
+            self.port,
+            "present" if auth_header else "none",
+            self.timeout,
+        )
+        if data:
+            _LOGGER.debug("Request data: %s", data)
 
         try:
             async with self.session.request(
@@ -82,38 +129,80 @@ class VizioAPIClient:
                 ssl=False,  # Vizio uses self-signed certs
                 timeout=self.timeout,
             ) as response:
+                # Log response status
+                _LOGGER.debug(
+                    "API response: %s %s - Status: %d, Headers: %s",
+                    method,
+                    endpoint,
+                    response.status,
+                    dict(response.headers),
+                )
+                
                 if response.status == 200:
                     try:
                         # Try to parse as JSON first
                         json_data = await response.json()
+                        _LOGGER.debug(
+                            "API response JSON: %s %s - %s",
+                            method,
+                            endpoint,
+                            json_data,
+                        )
                         return json_data
                     except Exception as json_err:
                         # If JSON parsing fails, get text for logging
                         response_text = await response.text()
                         _LOGGER.warning(
-                            "API response is not JSON for %s %s: %s, Response: %s",
+                            "API response is not JSON for %s %s: %s, Response (first 500 chars): %s",
                             method,
                             endpoint,
                             json_err,
-                            response_text[:200],
+                            response_text[:500],
+                        )
+                        _LOGGER.debug(
+                            "Full non-JSON response: %s",
+                            response_text,
                         )
                         return None
                 else:
                     # Non-200 status, get text for logging
                     response_text = await response.text()
                     _LOGGER.warning(
-                        "API request failed: %s %s - Status: %s, Response: %s",
+                        "API request failed: %s %s - Status: %d, Response (first 500 chars): %s",
                         method,
                         endpoint,
                         response.status,
                         response_text[:500],
                     )
+                    _LOGGER.debug(
+                        "Full error response: %s",
+                        response_text,
+                    )
                     return None
         except asyncio.TimeoutError:
-            _LOGGER.warning("API request timeout: %s %s", method, endpoint)
+            _LOGGER.warning(
+                "API request timeout: %s %s (timeout=%ds, host=%s:%d)",
+                method,
+                endpoint,
+                self.timeout,
+                self.host,
+                self.port,
+            )
             return None
         except Exception as err:
-            _LOGGER.warning("API request error: %s %s - %s", method, endpoint, err)
+            _LOGGER.warning(
+                "API request error: %s %s - %s (type: %s)",
+                method,
+                endpoint,
+                err,
+                type(err).__name__,
+            )
+            _LOGGER.debug(
+                "Full exception details for %s %s:",
+                method,
+                endpoint,
+                exc_info=True,
+            )
             return None
 
     async def get_power_state(self) -> bool | None:
@@ -124,6 +213,7 @@ class VizioAPIClient:
             False if device is off
             None if unable to determine (connection error, etc.)
         """
+        _LOGGER.debug("Getting power state from %s:%d", self.host, self.port)
         try:
             response = await self._request("GET", ENDPOINT_POWER_MODE)
             if response and "ITEMS" in response:
@@ -131,30 +221,72 @@ class VizioAPIClient:
                     if item.get("CNAME") == "power_mode":
                         # Power mode: 0 = off, 1 = on
                         value = item.get("VALUE")
+                        _LOGGER.debug(
+                            "Power state response: CNAME=%s, VALUE=%s, HASHVAL=%s",
+                            item.get("CNAME"),
+                            value,
+                            item.get("HASHVAL"),
+                        )
                         if value is not None:
-                            return value == 1
+                            is_on = value == 1
+                            _LOGGER.debug("Power state determined: %s (value=%s)", "ON" if is_on else "OFF", value)
+                            return is_on
                         # If VALUE is None but item exists, device might be off
+                        _LOGGER.debug("Power state VALUE is None, assuming OFF")
                         return False
             # If we got a response but no ITEMS, might be a different format
             if response:
-                _LOGGER.debug("Unexpected response format for power state: %s", response)
+                _LOGGER.warning(
+                    "Unexpected response format for power state: %s (expected ITEMS array)",
+                    response,
+                )
+            else:
+                _LOGGER.debug("No response received for power state query")
             return None
         except Exception as err:
-            _LOGGER.debug("Error getting power state via direct API: %s", err)
+            _LOGGER.warning(
+                "Error getting power state via direct API: %s (type: %s)",
+                err,
+                type(err).__name__,
+            )
+            _LOGGER.debug(
+                "Power state exception details:",
+                exc_info=True,
+            )
             return None
 
     async def power_on(self) -> bool:
-        """Send power on command."""
-        # Use key command for power on (CODESET 11, CODE 1)
-        return await self._send_key_command(11, 1)
+        """Send power on command.
+        
+        Returns:
+            True if command was sent successfully, False otherwise
+        """
+        _LOGGER.debug("Sending power on command to %s:%d", self.host, self.port)
+        result = await self._send_key_command(KEY_CODESET_POWER, KEY_CODE_POWER_ON)
+        _LOGGER.debug("Power on command result: %s", "success" if result else "failed")
+        return result
 
     async def power_off(self) -> bool:
-        """Send power off command."""
-        # Use key command for power off (CODESET 11, CODE 0)
-        return await self._send_key_command(11, 0)
+        """Send power off command.
+        
+        Returns:
+            True if command was sent successfully, False otherwise
+        """
+        _LOGGER.debug("Sending power off command to %s:%d", self.host, self.port)
+        result = await self._send_key_command(KEY_CODESET_POWER, KEY_CODE_POWER_OFF)
+        _LOGGER.debug("Power off command result: %s", "success" if result else "failed")
+        return result
 
     async def _send_key_command(self, codeset: int, code: int) -> bool:
-        """Send a key command."""
+        """Send a key command.
+        
+        Args:
+            codeset: Key command codeset (e.g., 11 for power, 5 for audio)
+            code: Key command code (e.g., 1 for on, 0 for off)
+            
+        Returns:
+            True if command was successful, False otherwise
+        """
         data = {
             "KEYLIST": [
                 {
@@ -165,24 +297,31 @@ class VizioAPIClient:
             ]
         }
         _LOGGER.debug(
-            "Sending key command: CODESET=%d, CODE=%d to %s",
+            "Sending key command: CODESET=%d, CODE=%d to %s%s",
             codeset,
             code,
-            self.base_url + ENDPOINT_KEY_COMMAND,
+            self.base_url,
+            ENDPOINT_KEY_COMMAND,
         )
         response = await self._request("PUT", ENDPOINT_KEY_COMMAND, data)
         if response:
             status = response.get("STATUS", {})
             result = status.get("RESULT", "").upper() if status.get("RESULT") else ""
             detail = status.get("DETAIL", "Unknown")
+            uri = response.get("URI", "Unknown")
+            time = response.get("TIME", "Unknown")
+            
             _LOGGER.debug(
-                "Key command response: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s, Full response: %s",
+                "Key command response: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s, URI=%s, TIME=%s",
                 codeset,
                 code,
                 result,
                 detail,
-                response,
+                uri,
+                time,
             )
+            _LOGGER.debug("Full key command response: %s", response)
+            
             # Accept SUCCESS (case-insensitive) as success
             if result == "SUCCESS":
                 _LOGGER.debug(
@@ -193,19 +332,21 @@ class VizioAPIClient:
                 return True
             else:
                 _LOGGER.warning(
-                    "Key command failed: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s, Full response: %s",
+                    "Key command failed: CODESET=%d, CODE=%d, RESULT=%s, DETAIL=%s",
                     codeset,
                     code,
                     result,
                     detail,
-                    response,
                 )
+                _LOGGER.debug("Failed key command full response: %s", response)
                 return False
         else:
             _LOGGER.warning(
-                "Key command request failed: CODESET=%d, CODE=%d (no response from API)",
+                "Key command request failed: CODESET=%d, CODE=%d (no response from API, host=%s:%d)",
                 codeset,
                 code,
+                self.host,
+                self.port,
             )
         return False
 
@@ -227,32 +368,71 @@ class VizioAPIClient:
         inputs = []
         if response and "ITEMS" in response:
             for item in response["ITEMS"]:
-                if item.get("TYPE") == "T_VALUE_V1":
-                    # Extract input name and HASHVAL
-                    value = item.get("VALUE", "")
+                # Handle both T_VALUE_V1 (standard) and T_DEVICE_V1 (some models)
+                item_type = item.get("TYPE")
+                if item_type in ("T_VALUE_V1", "T_DEVICE_V1"):
+                    # Try to get name from VALUE or NAME field
+                    name = item.get("VALUE") or item.get("NAME", "")
+                    # Try to get HASHVAL directly or from CNAME
                     hashval = item.get("HASHVAL")
-                    if value and hashval is not None:
+                    cname = item.get("CNAME", "")
+                    
+                    # Some models don't provide HASHVAL directly
+                    # We'll use CNAME as identifier if HASHVAL is missing
+                    if name and (hashval is not None or cname):
                         inputs.append({
-                            "name": value,
-                            "id": hashval,
+                            "name": name,
+                            "id": hashval if hashval is not None else cname,
+                            "cname": cname,
                         })
         return inputs
 
     async def set_input(self, input_name: str) -> bool:
-        """Set input by name."""
-        # First, get the current input to get its HASHVAL (required by API)
-        current_input = await self.get_current_input()
-        if not current_input or current_input.get("id") is None:
-            _LOGGER.warning("Cannot get current input HASHVAL for input selection")
+        """Set input by name.
+        
+        According to API docs:
+        - VALUE: ITEMS[x].NAME from name_input endpoint (or lowercase CNAME)
+        - HASHVAL: Current HashValue from ITEMS[0].HASHVAL of current_input GET response
+        
+        Some TV models don't provide HASHVAL in ITEMS[0], making input selection impossible.
+        """
+        # Step 1: Get current_input to extract HASHVAL from ITEMS[0]
+        # Per API docs and user feedback: HASHVAL should be in ITEMS[0].HASHVAL
+        current_input_response = await self._request("GET", ENDPOINT_CHANGE_INPUT)
+        current_hashval = None
+        
+        if current_input_response:
+            # Per API docs and user feedback: HASHVAL should be in ITEMS[0].HASHVAL
+            # This is the correct way to get the current input HASHVAL
+            if "ITEMS" in current_input_response and len(current_input_response["ITEMS"]) > 0:
+                item0 = current_input_response["ITEMS"][0]
+                hashval = item0.get("HASHVAL")
+                if hashval is not None:
+                    current_hashval = int(hashval)
+                    _LOGGER.debug("Found current input HASHVAL in ITEMS[0]: %d", current_hashval)
+        
+        if current_hashval is None:
+            _LOGGER.warning(
+                "Could not extract current input HASHVAL from ITEMS[0].HASHVAL. "
+                "This TV model may not support programmatic input selection. "
+                "The current_input endpoint must return ITEMS[0].HASHVAL for input selection to work."
+            )
             return False
         
-        current_input_hashval = current_input["id"]
-        
-        # Get the list of available inputs to find the target input's HASHVAL
+        # Step 2: Get input list to find target input NAME
         input_list = await self.get_input_list()
+        if not input_list:
+            _LOGGER.warning("Could not retrieve input list for input selection")
+            return False
+        
+        # Find the target input (match by name or CNAME)
         target_input = None
+        input_name_upper = input_name.upper()
         for inp in input_list:
-            if inp["name"].upper() == input_name.upper():
+            if (
+                inp["name"].upper() == input_name_upper
+                or inp.get("cname", "").upper() == input_name_upper.replace("-", "").replace("_", "")
+            ):
                 target_input = inp
                 break
         
@@ -260,16 +440,24 @@ class VizioAPIClient:
             _LOGGER.warning("Input '%s' not found in available inputs", input_name)
             return False
         
-        target_input_hashval = target_input["id"]
+        # Try lowercase CNAME first (as per user feedback), fallback to NAME
+        # User example uses "hdmi2" (lowercase CNAME), not "HDMI-2" (NAME)
+        target_value = target_input.get("cname", "").lower()
+        if not target_value:
+            target_value = target_input["name"]
         
-        # Change input using the API
-        # According to API docs: PUT to current_input with REQUEST: MODIFY, VALUE: input_name, HASHVAL: target_hashval
-        # Input names should be lowercase
+        # Step 3: Set input with current HASHVAL and target VALUE
         data = {
             "REQUEST": "MODIFY",
-            "VALUE": input_name.lower(),
-            "HASHVAL": target_input_hashval,
+            "VALUE": target_value,  # Use lowercase CNAME (e.g., "hdmi2") or NAME as fallback
+            "HASHVAL": current_hashval,  # Use HASHVAL from ITEMS[0] of current_input GET
         }
+        
+        _LOGGER.debug(
+            "Setting input: VALUE=%s, HASHVAL=%d (from ITEMS[0] of current_input)",
+            target_value,
+            current_hashval,
+        )
         
         response = await self._request("PUT", ENDPOINT_CHANGE_INPUT, data)
         
@@ -281,32 +469,60 @@ class VizioAPIClient:
                 return True
             else:
                 _LOGGER.debug(
-                    "Input change failed: %s",
+                    "Input change failed: %s - %s",
+                    result,
                     status.get("DETAIL", "Unknown error"),
                 )
         
         return False
 
+    async def get_model_name(self) -> str | None:
+        """Get device model name."""
+        response = await self._request("GET", ENDPOINT_TV_INFORMATION)
+        if response and "ITEMS" in response:
+            for item in response["ITEMS"]:
+                if item.get("CNAME") == "model_name":
+                    return item.get("VALUE")
+        return None
+
+    async def get_version(self) -> str | None:
+        """Get device firmware version."""
+        response = await self._request("GET", ENDPOINT_TV_INFORMATION)
+        if response and "ITEMS" in response:
+            for item in response["ITEMS"]:
+                if item.get("CNAME") == "firmware":
+                    return item.get("VALUE")
+        return None
+
+    async def get_device_info(self) -> dict[str, Any]:
+        """Get comprehensive device information."""
+        response = await self._request("GET", ENDPOINT_TV_INFORMATION)
+        info = {}
+        if response and "ITEMS" in response:
+            for item in response["ITEMS"]:
+                cname = item.get("CNAME")
+                value = item.get("VALUE")
+                if cname and value:
+                    info[cname] = value
+        return info
+
     async def volume_up(self, num: int = 1) -> bool:
         """Increase volume."""
-        # CODESET 5, CODE 2 = Volume Up
         for _ in range(num):
-            if not await self._send_key_command(5, 2):
+            if not await self._send_key_command(KEY_CODESET_VOLUME, KEY_CODE_VOLUME_UP):
                 return False
         return True
 
     async def volume_down(self, num: int = 1) -> bool:
         """Decrease volume."""
-        # CODESET 5, CODE 3 = Volume Down
         for _ in range(num):
-            if not await self._send_key_command(5, 3):
+            if not await self._send_key_command(KEY_CODESET_VOLUME, KEY_CODE_VOLUME_DOWN):
                 return False
         return True
 
     async def mute(self, mute_on: bool = True) -> bool:
         """Toggle mute."""
-        # CODESET 5, CODE 4 = Mute
-        return await self._send_key_command(5, 4)
+        return await self._send_key_command(KEY_CODESET_VOLUME, KEY_CODE_MUTE)
 
     async def get_volume_level(self) -> int | None:
         """Get current volume level."""

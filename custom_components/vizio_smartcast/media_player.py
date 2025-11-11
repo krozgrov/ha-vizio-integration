@@ -53,6 +53,7 @@ from .const import (
     VIZIO_SOUND_MODE,
     VIZIO_VOLUME,
 )
+from .capabilities import VizioCapabilities, detect_capabilities
 from .coordinator import VizioAppsDataUpdateCoordinator
 from .vizio_api import VizioAPIClient
 
@@ -121,7 +122,7 @@ async def async_setup_entry(
 
     apps_coordinator = hass.data[DOMAIN].get(CONF_APPS)
 
-    # Create direct API client as fallback for problematic operations
+    # Create direct API client for all runtime operations (power, inputs, volume, etc.)
     api_client = VizioAPIClient(
         host=host,
         auth_token=token,
@@ -129,7 +130,14 @@ async def async_setup_entry(
         timeout=DEFAULT_TIMEOUT,
     )
 
-    entity = VizioDevice(config_entry, device, name, device_class, apps_coordinator, api_client)
+    # Detect capabilities to determine which methods work on this TV
+    _LOGGER.info("Detecting capabilities for %s...", host)
+    capabilities = await detect_capabilities(device, api_client, host)
+    _LOGGER.info("Capabilities detected for %s: %s", host, capabilities)
+
+    entity = VizioDevice(
+        config_entry, device, name, device_class, apps_coordinator, api_client, capabilities
+    )
 
     async_add_entities([entity], update_before_add=True)
     platform = entity_platform.async_get_current_platform()
@@ -152,7 +160,8 @@ class VizioDevice(MediaPlayerEntity):
         name: str,
         device_class: MediaPlayerDeviceClass,
         apps_coordinator: VizioAppsDataUpdateCoordinator | None,
-        api_client: VizioAPIClient | None = None,
+        api_client: VizioAPIClient,
+        capabilities: VizioCapabilities,
     ) -> None:
         """Initialize Vizio device."""
         self._config_entry = config_entry
@@ -169,7 +178,8 @@ class VizioDevice(MediaPlayerEntity):
             CONF_ADDITIONAL_CONFIGS, []
         )
         self._device = device
-        self._api_client = api_client  # Direct API client as fallback
+        self._api_client = api_client
+        self._capabilities = capabilities  # Detected capabilities for this TV
         try:
             self._max_volume = float(device.get_max_volume())
         except (ValueError, TypeError, AttributeError) as err:
@@ -207,64 +217,69 @@ class VizioDevice(MediaPlayerEntity):
 
     async def async_update(self) -> None:
         """Retrieve latest state of the device."""
-        try:
-            # Use direct API for power state (more reliable than pyvizio)
-            if self._api_client:
+        host = self._config_entry.data[CONF_HOST]
+        _LOGGER.debug("Updating device state for %s", host)
+        
+        # Use detected capabilities to determine best method for power state
+        method = self._capabilities.get_best_method("power_state")
+        is_on = None
+        
+        if method == "direct_api":
+            try:
                 is_on = await self._api_client.get_power_state()
-            else:
+                _LOGGER.debug("Power state (direct API) for %s: %s", host, is_on)
+            except Exception as err:
+                _LOGGER.warning("Direct API power state failed for %s: %s", host, err)
+                is_on = None
+        elif method == "pyvizio":
+            try:
                 is_on = await self._device.get_power_state(log_api_exception=False)
-        except Exception as err:
-            _LOGGER.debug(
-                "Error getting power state for %s: %s",
-                self._config_entry.data[CONF_HOST],
-                err,
+                _LOGGER.debug("Power state (pyvizio) for %s: %s", host, is_on)
+            except Exception as err:
+                _LOGGER.warning("pyvizio power state failed for %s: %s", host, err)
+                is_on = None
+        else:
+            _LOGGER.warning("No working method for power state on %s", host)
+        
+        if is_on is None:
+            _LOGGER.warning(
+                "Could not determine power state for %s",
+                host,
             )
             if self._attr_available:
                 _LOGGER.warning(
-                    "Lost connection to %s", self._config_entry.data[CONF_HOST]
+                    "Lost connection to %s", host
                 )
                 self._attr_available = False
             return
 
         # Handle None response - could mean device is off or unreachable
         if is_on is None:
+            _LOGGER.debug(
+                "Power state is None for %s (current state: %s)",
+                host,
+                self._attr_state,
+            )
             # If we just turned the device off, it's expected to not respond
             if self._attr_state == MediaPlayerState.OFF:
                 # Device is off, this is expected - keep it as OFF, not unavailable
+                _LOGGER.debug("Device %s is OFF (expected no response)", host)
                 return
-            # Try pyvizio as fallback to see if it can get the state
-            try:
-                pyvizio_state = await self._device.get_power_state(log_api_exception=False)
-                if pyvizio_state is not None:
-                    # pyvizio got a response, use it
-                    is_on = pyvizio_state
-                else:
-                    # Both failed - mark as unavailable (connection lost)
-                    if self._attr_available:
-                        _LOGGER.warning(
-                            "Lost connection to %s (both direct API and pyvizio failed)",
-                            self._config_entry.data[CONF_HOST],
-                        )
-                        self._attr_available = False
-                    return
-            except Exception as fallback_err:
-                # Fallback also failed
-                _LOGGER.debug(
-                    "Pyvizio fallback also failed for %s: %s",
-                    self._config_entry.data[CONF_HOST],
-                    fallback_err,
+            # Connection lost or device unreachable
+            if self._attr_available:
+                _LOGGER.warning(
+                    "Lost connection to %s (device may be unreachable, previous state: %s)",
+                    host,
+                    self._attr_state,
                 )
-                if self._attr_available:
-                    _LOGGER.warning(
-                        "Lost connection to %s (direct API and pyvizio both failed)",
-                        self._config_entry.data[CONF_HOST],
-                    )
-                    self._attr_available = False
-                return
+                self._attr_available = False
+            return
 
         if not self._attr_available:
-            _LOGGER.warning(
-                "Restored connection to %s", self._config_entry.data[CONF_HOST]
+            _LOGGER.info(
+                "Restored connection to %s (power state: %s)",
+                self._config_entry.data[CONF_HOST],
+                "ON" if is_on else "OFF",
             )
             self._attr_available = True
 
@@ -281,14 +296,21 @@ class VizioDevice(MediaPlayerEntity):
                 )
                 if device:
                     try:
-                        model = await self._device.get_model_name(log_api_exception=False)
-                        version = await self._device.get_version(log_api_exception=False)
-                        device_reg.async_update_device(
-                            device.id,
-                            model=model,
-                            sw_version=version,
-                        )
-                        self._received_device_info = True
+                        # Use direct API for device info
+                        model = await self._api_client.get_model_name()
+                        version = await self._api_client.get_version()
+                        if model:
+                            device_reg.async_update_device(
+                                device.id,
+                                model=model,
+                            )
+                        if version:
+                            device_reg.async_update_device(
+                                device.id,
+                                sw_version=version,
+                            )
+                        if model or version:
+                            self._received_device_info = True
                     except Exception as err:
                         _LOGGER.debug(
                             "Error updating device info for %s: %s",
@@ -506,50 +528,49 @@ class VizioDevice(MediaPlayerEntity):
         
         _LOGGER.info("Attempting to turn on %s", host)
         
+        # Use detected capabilities to determine best method
+        method = self._capabilities.get_best_method("power_on")
+        if method == "none":
+            _LOGGER.error("No working method for power on on %s", host)
+            return
+        
         total_wait_time = 0.0
         
         for attempt in range(max_attempts):
             try:
                 _LOGGER.debug(
-                    "Power on attempt %d/%d for %s",
+                    "Power on attempt %d/%d for %s (using %s)",
                     attempt + 1,
                     max_attempts,
                     host,
+                    method,
                 )
                 
-                # Send power on command - use direct API first (fixing the implementation)
-                if self._api_client:
+                # Send power on command using detected best method
+                success = False
+                if method == "direct_api":
                     success = await self._api_client.power_on()
-                    if not success:
-                        _LOGGER.warning(
-                            "Direct API power on command failed for %s, trying pyvizio fallback",
-                            host,
-                        )
-                        # Fallback to pyvizio if direct API fails
-                        try:
-                            await self._device.pow_on(log_api_exception=False)
-                        except Exception as pyvizio_err:
-                            _LOGGER.error(
-                                "Both direct API and pyvizio power on failed for %s: %s",
-                                host,
-                                pyvizio_err,
-                            )
-                else:
-                    # No API client available, use pyvizio
-                    _LOGGER.debug("No direct API client, using pyvizio for power on")
+                elif method == "pyvizio":
                     await self._device.pow_on(log_api_exception=False)
+                    success = True  # pyvizio doesn't return success/failure
+                
+                if not success:
+                    _LOGGER.warning(
+                        "%s power on command failed for %s (attempt %d/%d)",
+                        method,
+                        host,
+                        attempt + 1,
+                        max_attempts,
+                    )
                 
                 # Wait before checking - don't poll frequently as it can overwhelm the TV
                 delay = initial_delay if attempt == 0 else retry_delay
                 await asyncio.sleep(delay)
                 total_wait_time += delay
                 
-                # Check state once after waiting - use direct API client
+                # Check state once after waiting using direct API
                 try:
-                    if self._api_client:
-                        power_state = await self._api_client.get_power_state()
-                    else:
-                        power_state = await self._device.get_power_state(log_api_exception=False)
+                    power_state = await self._api_client.get_power_state()
                     if power_state:
                         # Device is confirmed on
                         self._attr_state = MediaPlayerState.ON
@@ -645,46 +666,45 @@ class VizioDevice(MediaPlayerEntity):
         
         _LOGGER.info("Attempting to turn off %s", host)
         
+        # Use detected capabilities to determine best method
+        method = self._capabilities.get_best_method("power_off")
+        if method == "none":
+            _LOGGER.error("No working method for power off on %s", host)
+            return
+        
         for attempt in range(max_attempts):
             try:
                 _LOGGER.debug(
-                    "Power off attempt %d/%d for %s",
+                    "Power off attempt %d/%d for %s (using %s)",
                     attempt + 1,
                     max_attempts,
                     host,
+                    method,
                 )
                 
-                # Use direct API for power off (fixing the implementation)
-                if self._api_client:
+                # Use detected best method for power off
+                success = False
+                if method == "direct_api":
                     success = await self._api_client.power_off()
-                    if not success:
-                        _LOGGER.warning(
-                            "Direct API power off command failed for %s, trying pyvizio fallback",
-                            host,
-                        )
-                        # Fallback to pyvizio if direct API fails
-                        try:
-                            await self._device.pow_off(log_api_exception=False)
-                        except Exception as pyvizio_err:
-                            _LOGGER.error(
-                                "Both direct API and pyvizio power off failed for %s: %s",
-                                host,
-                                pyvizio_err,
-                            )
-                else:
-                    # No API client available, use pyvizio
-                    _LOGGER.debug("No direct API client, using pyvizio for power off")
+                elif method == "pyvizio":
                     await self._device.pow_off(log_api_exception=False)
+                    success = True  # pyvizio doesn't return success/failure
+                
+                if not success:
+                    _LOGGER.warning(
+                        "%s power off command failed for %s (attempt %d/%d)",
+                        method,
+                        host,
+                        attempt + 1,
+                        max_attempts,
+                    )
                 
                 # Wait a moment for device to respond
                 await asyncio.sleep(1.0)
                 
-                # Verify the device turned off - use direct API client
+                # Verify the device turned off using direct API
                 try:
-                    if self._api_client:
-                        power_state = await self._api_client.get_power_state()
-                    else:
-                        power_state = await self._device.get_power_state(log_api_exception=False)
+                    power_state = await self._api_client.get_power_state()
                     if not power_state:
                         # Device is confirmed off
                         self._attr_state = MediaPlayerState.OFF
@@ -820,10 +840,20 @@ class VizioDevice(MediaPlayerEntity):
         """Select input source."""
         try:
             if source in self._available_inputs:
-                # Try direct API first (more reliable than pyvizio)
-                if self._api_client:
+                # Use detected capabilities to determine best method
+                method = self._capabilities.get_best_method("input_set")
+                if method == "none":
+                    _LOGGER.error(
+                        "No working method for input selection on %s. "
+                        "Input selection may not be supported on this TV model.",
+                        self._config_entry.data[CONF_HOST],
+                    )
+                    return
+                
+                _LOGGER.debug("Setting input to %s using %s", source, method)
+                
+                if method == "direct_api":
                     try:
-                        _LOGGER.debug("Using direct API to set input: %s", source)
                         success = await self._api_client.set_input(source)
                         if success:
                             _LOGGER.info(
@@ -833,78 +863,39 @@ class VizioDevice(MediaPlayerEntity):
                             await self.async_update()
                             return
                         else:
-                            _LOGGER.debug(
-                                "Direct API input change failed, trying pyvizio fallback"
+                            _LOGGER.warning(
+                                "Direct API input change failed for %s",
+                                source,
                             )
                     except Exception as api_err:
-                        _LOGGER.debug(
-                            "Direct API input change error: %s, trying pyvizio fallback",
+                        _LOGGER.warning(
+                            "Direct API input change error for %s: %s",
+                            source,
                             api_err,
                         )
                 
-                # Fallback to pyvizio
-                try:
-                    await self._device.set_input(source, log_api_exception=False)
-                    await self.async_update()
-                    return
-                except TypeError as err:
-                    # Handle case where pyvizio fails due to None input ID
-                    # This can happen when the current input doesn't have a valid ID
-                    if "NoneType" in str(err) or "int() argument" in str(err):
-                        _LOGGER.warning(
-                            "Input selection failed due to invalid current input state on %s. "
-                            "Trying direct API fallback...",
-                            self._config_entry.data[CONF_HOST],
-                        )
-                        # Try direct API client if available
-                        if self._api_client:
-                            try:
-                                _LOGGER.debug("Using direct API to set input: %s", source)
-                                success = await self._api_client.set_input(source)
-                                if success:
-                                    _LOGGER.info(
-                                        "Successfully changed input to %s using direct API",
-                                        source,
-                                    )
-                                    await self.async_update()
-                                    return
-                                else:
-                                    _LOGGER.warning(
-                                        "Direct API input change failed, trying pyvizio fallback"
-                                    )
-                                    await self.async_update()
-                                    await self._device.set_input(source, log_api_exception=False)
-                            except Exception as retry_err:
-                                _LOGGER.error(
-                                    "Error selecting source %s on %s after direct API: %s",
-                                    source,
-                                    self._config_entry.data[CONF_HOST],
-                                    retry_err,
-                                )
-                                # Try pyvizio as last resort
-                                try:
-                                    await self.async_update()
-                                    await self._device.set_input(source, log_api_exception=False)
-                                except Exception as final_err:
-                                    _LOGGER.error(
-                                        "Error selecting source %s on %s after all fallbacks: %s",
-                                        source,
-                                        self._config_entry.data[CONF_HOST],
-                                        final_err,
-                                    )
+                elif method == "pyvizio":
+                    try:
+                        await self._device.set_input(source, log_api_exception=False)
+                        await self.async_update()
+                        return
+                    except TypeError as err:
+                        # Handle case where pyvizio fails due to None input ID
+                        # This can happen when the current input doesn't have a valid ID
+                        if "NoneType" in str(err) or "int() argument" in str(err):
+                            _LOGGER.warning(
+                                "Input selection failed due to invalid current input state on %s",
+                                self._config_entry.data[CONF_HOST],
+                            )
                         else:
-                            # No API client, just refresh and retry
-                            try:
-                                await self.async_update()
-                                await self._device.set_input(source, log_api_exception=False)
-                            except Exception as retry_err:
-                                _LOGGER.error(
-                                    "Error selecting source %s on %s after refresh: %s",
-                                    source,
-                                    self._config_entry.data[CONF_HOST],
-                                    retry_err,
-                                )
-                    else:
+                            raise
+                    except Exception as err:
+                        _LOGGER.error(
+                            "Error selecting source %s on %s using pyvizio: %s",
+                            source,
+                            self._config_entry.data[CONF_HOST],
+                            err,
+                        )
                         raise
             elif source in self._get_additional_app_names():
                 app_config = next(

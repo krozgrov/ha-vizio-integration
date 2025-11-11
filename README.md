@@ -170,11 +170,23 @@ automation:
 - VIZIO SmartCast device (2016 or newer)
 - Network connectivity between Home Assistant and the device
 
+## Development & Migration
+
+This integration is migrating from the `pyvizio` library to direct API calls for better reliability and model support. See [MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md) for details on the migration strategy.
+
+**Migration Strategy**: Hybrid approach - Keep `pyvizio` for setup operations (pairing/auth, device discovery) while migrating all runtime operations to direct API calls. This reduces risk while improving reliability for frequently-used operations.
+
+**Current Status**: 
+- ✅ **Migrated**: Power control, input selection, basic volume commands (up/down, mute)
+- 🔄 **In Progress**: Volume level retrieval, audio settings, app management
+- ⏸️ **Deferred**: Pairing/auth, device discovery (keep using `pyvizio` for setup)
+
 ## Known Limitations
 
 - Volume information may not be available in all device states
 - Some older devices may have limited functionality
 - App launching requires the device to be powered on
+- Currently still uses `pyvizio` library for some operations (migration in progress)
 
 ## Changelog
 
