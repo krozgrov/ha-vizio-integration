@@ -37,12 +37,20 @@ class VizioAPIClient:
         timeout: int = 8,
     ) -> None:
         """Initialize the API client."""
-        self.host = host
         self.auth_token = auth_token
         self.session = session
-        self.port = port
         self.timeout = timeout
-        self.base_url = f"https://{host}:{port}"
+        
+        # Handle host that might already include port (e.g., "192.168.1.226:7345")
+        if ":" in host:
+            # Host already includes port
+            self.host = host.split(":")[0]
+            self.port = int(host.split(":")[1])
+        else:
+            self.host = host
+            self.port = port
+        
+        self.base_url = f"https://{self.host}:{self.port}"
 
     async def _request(
         self,

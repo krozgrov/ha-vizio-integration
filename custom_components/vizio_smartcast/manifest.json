@@ -10,6 +10,6 @@
   "loggers": ["pyvizio"],
   "quality_scale": "platinum",
   "requirements": ["pyvizio==0.1.61"],
-  "version": "2025.11.9b19",
+  "version": "2025.11.9b20",
   "zeroconf": ["_viziocast._tcp.local."]
 }
