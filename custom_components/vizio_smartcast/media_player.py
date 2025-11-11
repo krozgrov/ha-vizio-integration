@@ -232,13 +232,35 @@ class VizioDevice(MediaPlayerEntity):
             if self._attr_state == MediaPlayerState.OFF:
                 # Device is off, this is expected - keep it as OFF, not unavailable
                 return
-            # Otherwise, mark as unavailable (connection lost)
-            if self._attr_available:
-                _LOGGER.warning(
-                    "Lost connection to %s", self._config_entry.data[CONF_HOST]
+            # Try pyvizio as fallback to see if it can get the state
+            try:
+                pyvizio_state = await self._device.get_power_state(log_api_exception=False)
+                if pyvizio_state is not None:
+                    # pyvizio got a response, use it
+                    is_on = pyvizio_state
+                else:
+                    # Both failed - mark as unavailable (connection lost)
+                    if self._attr_available:
+                        _LOGGER.warning(
+                            "Lost connection to %s (both direct API and pyvizio failed)",
+                            self._config_entry.data[CONF_HOST],
+                        )
+                        self._attr_available = False
+                    return
+            except Exception as fallback_err:
+                # Fallback also failed
+                _LOGGER.debug(
+                    "Pyvizio fallback also failed for %s: %s",
+                    self._config_entry.data[CONF_HOST],
+                    fallback_err,
                 )
-                self._attr_available = False
-            return
+                if self._attr_available:
+                    _LOGGER.warning(
+                        "Lost connection to %s (direct API and pyvizio both failed)",
+                        self._config_entry.data[CONF_HOST],
+                    )
+                    self._attr_available = False
+                return
 
         if not self._attr_available:
             _LOGGER.warning(

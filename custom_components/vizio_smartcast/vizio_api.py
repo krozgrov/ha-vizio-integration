@@ -7,6 +7,7 @@ Based on: https://github.com/exiva/Vizio_SmartCast_API
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -69,25 +70,46 @@ class VizioAPIClient:
                     return await response.json()
                 else:
                     _LOGGER.debug(
-                        "API request failed: %s %s - Status: %s",
+                        "API request failed: %s %s - Status: %s, Response: %s",
                         method,
                         endpoint,
                         response.status,
+                        await response.text() if response.status != 200 else "",
                     )
                     return None
+        except asyncio.TimeoutError:
+            _LOGGER.debug("API request timeout: %s %s", method, endpoint)
+            return None
         except Exception as err:
-            _LOGGER.debug("API request error: %s", err)
+            _LOGGER.debug("API request error: %s %s - %s", method, endpoint, err)
             return None
 
     async def get_power_state(self) -> bool | None:
-        """Get current power state."""
-        response = await self._request("GET", ENDPOINT_POWER_MODE)
-        if response and "ITEMS" in response:
-            for item in response["ITEMS"]:
-                if item.get("CNAME") == "power_mode":
-                    # Power mode: 0 = off, 1 = on
-                    return item.get("VALUE", 0) == 1
-        return None
+        """Get current power state.
+        
+        Returns:
+            True if device is on
+            False if device is off
+            None if unable to determine (connection error, etc.)
+        """
+        try:
+            response = await self._request("GET", ENDPOINT_POWER_MODE)
+            if response and "ITEMS" in response:
+                for item in response["ITEMS"]:
+                    if item.get("CNAME") == "power_mode":
+                        # Power mode: 0 = off, 1 = on
+                        value = item.get("VALUE")
+                        if value is not None:
+                            return value == 1
+                        # If VALUE is None but item exists, device might be off
+                        return False
+            # If we got a response but no ITEMS, might be a different format
+            if response:
+                _LOGGER.debug("Unexpected response format for power state: %s", response)
+            return None
+        except Exception as err:
+            _LOGGER.debug("Error getting power state via direct API: %s", err)
+            return None
 
     async def power_on(self) -> bool:
         """Send power on command."""
