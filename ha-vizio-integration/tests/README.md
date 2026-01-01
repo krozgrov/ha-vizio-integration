@@ -82,6 +82,78 @@ The script uses debug logging by default. You'll see:
 - Detailed error information
 - Power state values and parsing
 
+## App Traffic Capture
+
+### Using Wireshark (Recommended - Simplest)
+
+**No setup needed!** Just capture network traffic directly.
+
+1. **Install Wireshark:**
+   - Download from [wireshark.org](https://www.wireshark.org/download.html)
+   - Or: `brew install wireshark`
+
+2. **Start capture:**
+   - Open Wireshark
+   - Select network interface (usually `en0` for Wi-Fi)
+   - Set filter: `tcp.port == 7345` (simplest) or `ip.addr == 192.168.1.226 || ip.addr == 192.168.1.225`
+   - Click blue shark fin to start
+
+3. **Perform actions in Vizio app:**
+   - Change input (HDMI-1, HDMI-2, etc.)
+   - Power on/off
+   - Watch Wireshark for API calls
+
+4. **Analyze:**
+   - Look for HTTPS requests to TV IP:7345
+   - Right-click → Follow → HTTP Stream
+   - Look for PUT requests to `/current_input` or other endpoints
+   - Note request body structure
+
+See `tests/analyze_wireshark.md` for detailed analysis guide.
+
+### Using mitmproxy (Alternative)
+
+`capture_app_traffic.py` - Helper script for mitmproxy to capture and analyze Vizio app network traffic.
+
+### Purpose
+
+If the Vizio mobile app can change inputs on TV models that don't support the standard API, we can reverse engineer the app's network traffic to discover alternative methods.
+
+### Prerequisites
+
+```bash
+pip install mitmproxy
+```
+
+### Usage
+
+1. **Start mitmproxy with the capture script:**
+   ```bash
+   mitmproxy -p 8080 -s tests/capture_app_traffic.py
+   ```
+
+2. **Configure your mobile device:**
+   - iOS: Settings → Wi-Fi → (i) → Configure Proxy → Manual → Enter computer IP:8080
+   - Android: Wi-Fi → Long press network → Modify → Advanced → Proxy → Manual → Enter computer IP:8080
+
+3. **Install mitmproxy certificate:**
+   - Open browser on mobile device: `http://mitm.it`
+   - Download and install certificate for your OS
+
+4. **Capture traffic:**
+   - Open Vizio SmartCast app
+   - Perform actions (change input, power on/off, etc.)
+   - Watch mitmproxy terminal for filtered API calls
+
+### What to Look For
+
+When changing inputs in the app, look for:
+- Different endpoints than `/menu_native/dynamic/tv_settings/devices/current_input`
+- Different request formats (maybe no HASHVAL required?)
+- App-specific endpoints or authentication methods
+
+See `docs/APP_REVERSE_ENGINEERING.md` for detailed instructions.
+
 ## Power On Test Script (Legacy)
 
 `test_power_on.py` - Tests different power on methods using pyvizio (legacy).

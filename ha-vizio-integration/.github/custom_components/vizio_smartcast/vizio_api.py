@@ -440,16 +440,17 @@ class VizioAPIClient:
             _LOGGER.warning("Input '%s' not found in available inputs", input_name)
             return False
         
-        # Try lowercase CNAME first (as per user feedback), fallback to NAME
-        # User example uses "hdmi2" (lowercase CNAME), not "HDMI-2" (NAME)
-        target_value = target_input.get("cname", "").lower()
+        # Try NAME from input list first (as per Hubitat implementation)
+        # Hubitat uses: newInputValue = resp.data.ITEMS[jsonId].NAME
+        # Fallback to lowercase CNAME if NAME not available
+        target_value = target_input.get("name")  # Use NAME field first
         if not target_value:
-            target_value = target_input["name"]
+            target_value = target_input.get("cname", "").lower()
         
         # Step 3: Set input with current HASHVAL and target VALUE
         data = {
             "REQUEST": "MODIFY",
-            "VALUE": target_value,  # Use lowercase CNAME (e.g., "hdmi2") or NAME as fallback
+            "VALUE": target_value,  # Use NAME from name_input (as per Hubitat implementation)
             "HASHVAL": current_hashval,  # Use HASHVAL from ITEMS[0] of current_input GET
         }
         
