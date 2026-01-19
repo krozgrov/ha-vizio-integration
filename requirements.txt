@@ -1,2 +1,2 @@
-pyvizio==0.1.61
+pyvizio==0.1.64
 
